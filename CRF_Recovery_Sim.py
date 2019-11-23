@@ -14,7 +14,13 @@ import matplotlib.pyplot as plt
 import datetime
 
 
-def reconstruct(frequency, duration):
+def reconstruct_v1(frequency, duration):
+    """
+    This algorithm generates a wave based on timestamps
+    :param frequency:
+    :param duration:
+    :return:
+    """
     toggle_ts = []
     out_arr = []
     print("generating timestamps")
