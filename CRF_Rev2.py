@@ -6,6 +6,9 @@ count_to = 12490
 threshold = 100
 gPTP_time = 0
 cs2k_count = 0
+period_ocw = int(1/1000 * pow(10, 9))  # period of the output/control wave to the CS2000
+count_48 = 0
+
 
 
 def main(time):
@@ -16,10 +19,12 @@ def main(time):
     """
     duration = int(time*pow(10, 9))
     print("Iterating for {} nanoseconds".format(duration))
+
     for i in range(duration):
         # 125 MHz = 8nS
         if i % 8 == 0:
             run_125()
+        run_cs2k()
     return
 
 
@@ -55,24 +60,45 @@ def run_48():
 
     :return:
     """
+    global count_to
+    global count_48
+    global gPTP_time
+
+    count_48 = count_48 + 1
+    if count_48 == 160:
+        print("160 event gPTP time {}".format(gPTP_time))
+        count_48 = 0
     return
 
 
-def run_cs2k(value):
+def run_cs2k():
     """
+    If we have this method pull in the period of the control wave from 125mhz process,
+    we can determine when the output waves should be
+
     Mock CS2000 and clock divider implementation
     Every time it's run, for each high clock, we generate clk_in * 24576
     That's then divided down by 512 to get an output.
     When the divided output goes high, run_48 is called
     :return:
     """
-    print("CS2k process running")
-    global cs2k_count
-    for i in value * 24576:
-        cs2k_count = cs2k_count + 1
 
+    global cs2k_count
+    global period_ocw
+    global gPTP_time
+
+    # if gptp is a modulo of the amount of time in ns of the control wave, we can assume the wave is an output
+    # the control wave period is given by (1/f)* 10^9
+    if gPTP_time % int((1/1000)*pow(10, 9)) == 0:
+        print("HI WE'RE HERE {} - {}".format(cs2k_count, gPTP_time))
+        # we have an output from the CS2000!
+        cs2k_count = cs2k_count + 1
+        if cs2k_count == 512:
+            print("CS2k process running")
+            run_48()
+            cs2k_count = 0
     return
 
 
 if __name__ == "__main__":
-    main(0.01)
+    main(0.1)
