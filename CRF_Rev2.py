@@ -13,7 +13,7 @@ count_48 = 0
 
 def main(time):
     """
-    Runs the relevant processes by using nS timing
+    Runs the relevant processes by using nS timing as a step through process
     :time: Expects a duration in seconds
     :return:
     """
@@ -45,7 +45,7 @@ def run_125():
         cnt = 0
         if output == 1:
             output = 0
-        else :
+        else:
             output = 1
             run_cs2k()
             cnt_to = count_to

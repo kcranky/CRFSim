@@ -9,7 +9,7 @@ def generate_timestamps(freq, duration):
     timestamp = 0  # we can assume that the first clock will happen at t = 0
     ts_array = []
     while timestamp <= duration*pow(10, 9):
-        # We round down to hold floats, this caters for non-exact divisions
+        # We round down to hold floats, this caters for non-integer divisions
         ts_array.append(round(timestamp))
         timestamp += period
     return ts_array
