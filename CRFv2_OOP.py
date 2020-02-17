@@ -23,8 +23,9 @@ class GPTPGenerator:
             self.current_value += 1
             # print("The gPTP time is {}".format(i))
             # Call all relevant functions
-            sourcecmclk.trigger(i)
+            sourcecmclk.trigger(i, self.txfifo)
             csgen.ocw_control(i, self.txfifo, self.localfifo)
+            csgen.compare(self.txfifo, self.localfifo)
         print("Finished simulation at {}".format(i))
 
 
@@ -37,7 +38,7 @@ class SourceMClk:
         self.state = 0
         self.event_count = 0
 
-    def trigger(self, gptp_time):
+    def trigger(self, gptp_time, txfifo):
         # TODO : This isn't a perfect comparison, but it's the best we can do for now
         if int(gptp_time % self.base_period) == 0:
             self.state = not self.state
@@ -46,6 +47,7 @@ class SourceMClk:
             if self.event_count == 161:
                 print("{} - 160th MClk".format(gptp_time))
                 # Add to the tx buffer
+                txfifo.put(gptp_time)
                 self.event_count = 0
 
 
@@ -79,21 +81,22 @@ class CSGen:
                 self.clkdiv.activate(gptp_time)
             self.state = not self.state
 
-    def compare(self, source_mclk_timestamp):
+    def compare(self, txfifo, localfifo):
+        pass
         # this will run comparisons between the received TS and the generated gPTP timestamp
-        if source_mclk_timestamp == self.generated_timestamp:
-            # They're an exact match! We're good!
-            # Unlikely to happen but we may as well cater for this here
-            pass
-        elif source_mclk_timestamp > self.generated_timestamp+self.threshold:
-            # Source clock is ahead of generated timestamp! Speed up!
-            pass
-        elif source_mclk_timestamp < self.generated_timestamp+self.threshold:
-            # source clock is behind generated timestamp! we should slow down
-            pass
-        else:
-            # ??? Way out of sync, shift the count to 90 degrees and try again?
-            pass
+        # if source_mclk_timestamp == self.generated_timestamp:
+        #     # They're an exact match! We're good!
+        #     # Unlikely to happen but we may as well cater for this here
+        #     pass
+        # elif source_mclk_timestamp > self.generated_timestamp+self.threshold:
+        #     # Source clock is ahead of generated timestamp! Speed up!
+        #     pass
+        # elif source_mclk_timestamp < self.generated_timestamp+self.threshold:
+        #     # source clock is behind generated timestamp! we should slow down
+        #     pass
+        # else:
+        #     # ??? Way out of sync, shift the count to 90 degrees and try again?
+        #     pass
 
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
