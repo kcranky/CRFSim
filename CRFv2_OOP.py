@@ -26,6 +26,7 @@ class GPTPGenerator:
             sourcecmclk.trigger(i, self.txfifo)
             csgen.ocw_control(i, self.localfifo)
             csgen.compare(self.txfifo, self.localfifo)
+        print("{}, {}".format(self.txfifo.qsize(), self.localfifo.qsize()))
         print("Finished simulation at {}".format(i))
 
 
@@ -39,13 +40,13 @@ class SourceMClk:
         self.event_count = 0
 
     def trigger(self, gptp_time, txfifo):
-        # TODO : This isn't a perfect comparison, but it's the best we can do for now
+        # TODO : This isn't a perfect software model, but it's the best we can do for now
         if int(gptp_time % self.base_period) == 0:
             self.state = not self.state
             # need to generate a timestamp every 160 cycles
             self.event_count = self.event_count + 1
             if self.event_count == 161:
-                print("{} - 160th MClk".format(gptp_time))
+                # print("{} - 160th MClk".format(gptp_time))
                 # Add to the tx buffer
                 txfifo.put(gptp_time)
                 self.event_count = 0
@@ -91,15 +92,13 @@ class CSGen:
             self.state = not self.state
 
     def compare(self, txfifo, localfifo):
-        print("comparing!")
+        # print("comparing!")
         # the first time we call this method, we need to initialise the timestamps
-        print("{}, {}".format(localfifo.qsize(), txfifo.qsize()))
         if localfifo.qsize() > 0 and txfifo.qsize() > 0 and self.local_timestamp is None:
-            print("getting local")
             self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
-            print("getting rx")
             self.rx_timestamp = txfifo.get(1)
-        else:
+
+        if self.local_timestamp is None or self.rx_timestamp is None:
             return
 
         # TODO: Need to make a decision about checking timestamps based on their current gPTP timing.
@@ -112,22 +111,38 @@ class CSGen:
         difference = self.local_timestamp - self.rx_timestamp
 
         if -self.threshold_A <= difference <= self.threshold_A:
+            print("we're on time")
+            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
             self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
             self.rx_timestamp = txfifo.get(1)
+            print("fetched timestamps")
         elif self.threshold_A < difference <= self.threshold_B:
+            print("self.threshold_A < difference <= self.threshold_B")
+            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
             # slow down local clock by increasing count_to proportionally to the difference
             self.rx_timestamp = txfifo.get(1)
             # TODO: Maybe fetch both?
+            print("fetched timestamps")
         elif difference > self.threshold_B:
+            print("difference > self.threshold_B:")
+            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
             self.rx_timestamp = txfifo.get(1)
+            print("fetched timestamps")
         elif -self.threshold_B <= difference < -self.threshold_A:
+            print("-self.threshold_B <= difference < -self.threshold_A:")
+            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
             # do a correction to speed up local clock by making count_to smaller
             self.local_timestamp = localfifo.get(1)
             # TODO: Maybe fetch both?
+            print("fetched timestamps")
         elif difference < -self.threshold_B:
+            print("difference < -self.threshold_B")
+            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
             self.local_timestamp = localfifo.get(1)
+            print("fetched timestamps")
         else:
             print("Donkey")
+            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
 
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
@@ -159,11 +174,11 @@ class CLKDIV:
         if self.active:
             # if it is active, we need to see if the current gptp time is valid for it's multiplier
             if int(gptp_time % (1/self.output_freq*pow(10, 9))) == 0:
-                print("{} Toggle generated Mclk".format(gptp_time))
+                # print("{} Toggle generated Mclk".format(gptp_time))
                 # We need to write to the Local buffer here
                 localfifo.put(gptp_time)
 
 
 if __name__ == '__main__':
     sim = GPTPGenerator()
-    sim.run(99999)
+    sim.run(9999999*3)
