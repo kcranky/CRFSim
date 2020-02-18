@@ -24,7 +24,7 @@ class GPTPGenerator:
             # print("The gPTP time is {}".format(i))
             # Call all relevant functions
             sourcecmclk.trigger(i, self.txfifo)
-            csgen.ocw_control(i, self.txfifo, self.localfifo)
+            csgen.ocw_control(i, self.localfifo)
             csgen.compare(self.txfifo, self.localfifo)
         print("Finished simulation at {}".format(i))
 
@@ -53,18 +53,27 @@ class SourceMClk:
 
 # Module responsible for creating the output/control wave to the CS2000
 class CSGen:
-    threshold = 1302
+    # CRF-22 in F.12 specifies timestamps must be within +-5% of the media sample period.
+    # so for an "accurate" clock, we'll set threshold_A to be 5% of the period
+    threshold_A = 1041  # 5% of the period in nS
+    # TODO: Double check the value of threshold_B
+    # we're generating TS every 160 MClk. That means the greatest a difference can be is halfway between timestamps
+    # Should threshold_B, which decides when another Timestamp is fetched, be 50% of the difference between timestamps?
+    threshold_B = 1666666  # period of Mclk in nS * 80, rounded down
 
     def __init__(self):
         self.state = 0
         self.count_to = 500  # the value the CSGen must count to
         self.local_count = 0
         self.local_count_scale = 1  # How many times slower is the CS2000 driver module than the gPTP module?
-        self.generated_timestamp = 0  # The most recent local timestamp
 
         self.clkdiv = CLKDIV()  # TODO: probably not the best place to put this?
 
-    def ocw_control(self, gptp_time, txfifo, localfifo):
+        # define current timestamp values
+        self.local_timestamp = None
+        self.rx_timestamp = None
+
+    def ocw_control(self, gptp_time, localfifo):
         # increase local count by a related amount
         # TODO: Cater for self.local_count_scale here
         self.local_count = self.local_count + 1
@@ -82,21 +91,43 @@ class CSGen:
             self.state = not self.state
 
     def compare(self, txfifo, localfifo):
-        pass
+        print("comparing!")
+        # the first time we call this method, we need to initialise the timestamps
+        print("{}, {}".format(localfifo.qsize(), txfifo.qsize()))
+        if localfifo.qsize() > 0 and txfifo.qsize() > 0 and self.local_timestamp is None:
+            print("getting local")
+            self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
+            print("getting rx")
+            self.rx_timestamp = txfifo.get(1)
+        else:
+            return
+
+        # TODO: Need to make a decision about checking timestamps based on their current gPTP timing.
+        # TODO: For example, if I make a correction, from timestamps that happened a few ms ago,
+        # TODO: how long should I keep making that correction for?
+        # TODO: Need to implement Phase_shift_sim to confirm these assumptions experimentally
+
         # this will run comparisons between the received TS and the generated gPTP timestamp
-        # if source_mclk_timestamp == self.generated_timestamp:
-        #     # They're an exact match! We're good!
-        #     # Unlikely to happen but we may as well cater for this here
-        #     pass
-        # elif source_mclk_timestamp > self.generated_timestamp+self.threshold:
-        #     # Source clock is ahead of generated timestamp! Speed up!
-        #     pass
-        # elif source_mclk_timestamp < self.generated_timestamp+self.threshold:
-        #     # source clock is behind generated timestamp! we should slow down
-        #     pass
-        # else:
-        #     # ??? Way out of sync, shift the count to 90 degrees and try again?
-        #     pass
+
+        difference = self.local_timestamp - self.rx_timestamp
+
+        if -self.threshold_A <= difference <= self.threshold_A:
+            self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
+            self.rx_timestamp = txfifo.get(1)
+        elif self.threshold_A < difference <= self.threshold_B:
+            # slow down local clock by increasing count_to proportionally to the difference
+            self.rx_timestamp = txfifo.get(1)
+            # TODO: Maybe fetch both?
+        elif difference > self.threshold_B:
+            self.rx_timestamp = txfifo.get(1)
+        elif -self.threshold_B <= difference < -self.threshold_A:
+            # do a correction to speed up local clock by making count_to smaller
+            self.local_timestamp = localfifo.get(1)
+            # TODO: Maybe fetch both?
+        elif difference < -self.threshold_B:
+            self.local_timestamp = localfifo.get(1)
+        else:
+            print("Donkey")
 
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
@@ -119,7 +150,7 @@ class CLKDIV:
         # in order to multiply up and determine when to trigger
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
-        rate = difference* 24576 # this gives us how often we toggle the "iterim" wave
+        rate = difference * 24576  # this gives us how often we toggle the "interim" wave
         self.output_freq = rate/512.0
         # print("time={}; diff={}; rate={}; mclk_rate={}".format(gptp_time, difference, rate, mclk_rate))
 
