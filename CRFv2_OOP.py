@@ -111,42 +111,33 @@ class CSGen:
         difference = self.local_timestamp - self.rx_timestamp
 
         if -self.threshold_A <= difference <= self.threshold_A:
-            print("we're on time")
-            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
-            print(" Queue Size is {}, {}".format(txfifo.qsize(), localfifo.qsize()))
+            print("[-A..A], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
-            print("finished fetching")
         elif self.threshold_A < difference <= self.threshold_B:
-            print("self.threshold_A < difference <= self.threshold_B")
-            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
+            print("(A..B], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
             # slow down local clock by increasing count_to proportionally to the difference
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
-            # TODO: Maybe fetch both?
-            print("fetched timestamps")
+            if localfifo.qsize() != 0:
+                self.local_timestamp = localfifo.get(1)
         elif difference > self.threshold_B:
-            print("difference > self.threshold_B:")
-            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
+            print("(B..inf], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
-            print("fetched timestamps")
         elif -self.threshold_B <= difference < -self.threshold_A:
-            print("-self.threshold_B <= difference < -self.threshold_A:")
-            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
+            print("(-A..-B], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
             # do a correction to speed up local clock by making count_to smaller
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)
-            # TODO: Maybe fetch both?
-            print("fetched timestamps")
+            if txfifo.qsize() != 0:
+                self.rx_timestamp = txfifo.get(1)
         elif difference < -self.threshold_B:
-            print("difference < -self.threshold_B")
-            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
+            print("[-inf..-B), {} , {}, {} ".format(self.local_timestamp, self.rx_timestamp, difference))
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)
-            print("fetched timestamps")
         else:
             print("Donkey")
             print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
@@ -188,4 +179,4 @@ class CLKDIV:
 
 if __name__ == '__main__':
     sim = GPTPGenerator()
-    sim.run(9999999*3)
+    sim.run(9999999)
