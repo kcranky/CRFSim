@@ -25,7 +25,7 @@ class GPTPGenerator:
             # Call all relevant functions
             sourcecmclk.trigger(i, self.txfifo)
             csgen.ocw_control(i, self.localfifo)
-            csgen.compare(self.txfifo, self.localfifo)
+            csgen.compare(i, self.txfifo, self.localfifo)
         print("{}, {}".format(self.txfifo.qsize(), self.localfifo.qsize()))
         print("Finished simulation at {}".format(i))
 
@@ -61,6 +61,7 @@ class CSGen:
     # we're generating TS every 160 MClk. That means the greatest a difference can be is halfway between timestamps
     # Should threshold_B, which decides when another Timestamp is fetched, be 50% of the difference between timestamps?
     threshold_B = 1666666  # period of Mclk in nS * 80, rounded down
+    FSM_state = 0
 
     def __init__(self):
         self.state = 0
@@ -91,7 +92,7 @@ class CSGen:
                 self.clkdiv.activate(gptp_time)
             self.state = not self.state
 
-    def compare(self, txfifo, localfifo):
+    def compare(self, gptp_time, txfifo, localfifo):
         # print("comparing!")
         # the first time we call this method, we need to initialise the timestamps
         if localfifo.qsize() > 0 and txfifo.qsize() > 0 and self.local_timestamp is None:
@@ -111,36 +112,49 @@ class CSGen:
         difference = self.local_timestamp - self.rx_timestamp
 
         if -self.threshold_A <= difference <= self.threshold_A:
-            print("[-A..A], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
+            if self.FSM_state != 1:
+                self.FSM_state = 1
+                print("{}: [-A..A], {} , {}, {}".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
+
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
         elif self.threshold_A < difference <= self.threshold_B:
-            print("(A..B], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
+            if self.FSM_state != 2:
+                self.FSM_state = 2
+                print("{}: (A..B], {} , {}, {}".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             # slow down local clock by increasing count_to proportionally to the difference
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)
         elif difference > self.threshold_B:
-            print("(B..inf], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
+            if self.FSM_state != 3:
+                self.FSM_state = 3
+                print("{}: (B..inf], {} , {}, {}".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
         elif -self.threshold_B <= difference < -self.threshold_A:
-            print("(-A..-B], {} , {}, {}".format(self.local_timestamp, self.rx_timestamp, difference))
+            if self.FSM_state != 4:
+                self.FSM_state = 4
+                print("{}: (-A..-B], {} , {}, {}".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             # do a correction to speed up local clock by making count_to smaller
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
-        elif difference < -self.threshold_B:
-            print("[-inf..-B), {} , {}, {} ".format(self.local_timestamp, self.rx_timestamp, difference))
+        elif difference < - self.threshold_B:
+            if self.FSM_state != 5:
+                self.FSM_state = 5
+                print("{}: [-inf..-B), {} , {}, {} ".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)
         else:
-            print("Donkey")
-            print("{}-{}={}".format(self.local_timestamp, self.rx_timestamp, difference))
+            if self.FSM_state != 6:
+                self.FSM_state = 6
+                print("Donkey")
+                print("{}: {}-{}={}".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
 
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
