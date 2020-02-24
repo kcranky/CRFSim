@@ -7,9 +7,12 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 now = datetime.now()
-logfile = open("CRFv2_OOP_Sim_{}.txt".format(now.strftime("%Y%m%d_%H%M%S")), "w+")
+simtime = now.strftime("%Y-%m-%d-%H%M%S")
+logfile = open("{}-CRFv2_OOP_Sim.txt".format(simtime), "w+")
 srcmclk = []
 srcmclk_y = []
+genmclk = []
+genmclk_y = []
 
 
 # The mock gPTP module
@@ -61,8 +64,9 @@ class SourceMClk:
             if self.event_count == 161:
                 # print("{} - 160th MClk".format(gptp_time))
                 # Add to the tx buffer and print array
-                txfifo.put(gptp_time)
                 self.event_count = 0
+                if self.state == 1:
+                    txfifo.put(gptp_time)
 
 
 # Module responsible for creating the output/control wave to the CS2000
@@ -181,7 +185,7 @@ class CLKDIV:
     # This "interim wave" is the divided down by 512 to generate a 48kHz wave
     def __init__(self):
         self.active = True
-        self.state = 1
+        self.state = 0
         self.last_trigger = 0
         self.output_freq = 48000.0
 
@@ -196,19 +200,29 @@ class CLKDIV:
         # print("time={}; diff={}; rate={}; mclk_rate={}".format(gptp_time, difference, rate, mclk_rate))
 
     def check(self, gptp_time, localfifo):
+        global genmclk
+        global genmclk_y
         # This function gets called every ns.
         if self.active:
             # if it is active, we need to see if the current gptp time is valid for it's multiplier
             if int(gptp_time % ((1/self.output_freq*pow(10, 9))/2)) == 0:
                 # print("{} Toggle generated Mclk".format(gptp_time))
                 # We need to write to the Local buffer here
-                localfifo.put(gptp_time)
+                self.state = not self.state
+                genmclk.append(gptp_time)
+                genmclk_y.append(self.state*0.5)
+                if self.state == 1:
+                    localfifo.put(gptp_time)
 
 
-def plot_square_wave():
+def plots():
     global srcmclk
     global srcmclk_y
-    plt.plot(srcmclk, srcmclk_y, color='blue', drawstyle='steps-post')
+    global genmclk
+    global genmclk_y
+    global simtime
+    plt.plot(srcmclk, srcmclk_y, color='blue', drawstyle='steps-post', linewidth=0.25)
+    plt.plot(genmclk, genmclk_y, color='red', drawstyle='steps-post', linewidth=0.25)
     plt.title("Waveform")
     plt.ylabel('Amplitude')
     plt.xlabel("Time")
@@ -217,10 +231,10 @@ def plot_square_wave():
     ax = plt.gca()
     ax.grid(True)
     ax.set_aspect(1.0 / ax.get_data_ratio() * 0.5)
-    plt.savefig("waveform{:%d%m%Y%H%M}.png".format(datetime.now()), dpi=2400)
+    plt.savefig("{}-waveform.png".format(simtime), dpi=2400)
 
 
 if __name__ == '__main__':
     sim = GPTPGenerator()
-    sim.run(999999)
-    plot_square_wave()
+    sim.run(9999999)
+    plots()
