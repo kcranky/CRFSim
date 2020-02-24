@@ -8,7 +8,9 @@ import matplotlib.pyplot as plt
 
 now = datetime.now()
 simtime = now.strftime("%Y-%m-%d-%H%M%S")
-logfile = open("{}-CRFv2_OOP_Sim.txt".format(simtime), "w+")
+logfile = open("{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
+logfile.write("gptp_time, range, self.local_timestamp, self.rx_timestamp, difference\n")
+
 srcmclk = []
 srcmclk_y = []
 genmclk = []
@@ -60,7 +62,8 @@ class SourceMClk:
             srcmclk.append(gptp_time)
             srcmclk_y.append(self.state)
             # need to generate a timestamp every 160 cycles
-            self.event_count = self.event_count + 1
+            if self.state == 1:
+                self.event_count = self.event_count + 1
             if self.event_count == 161:
                 # print("{} - 160th MClk".format(gptp_time))
                 # Add to the tx buffer and print array
@@ -132,7 +135,7 @@ class CSGen:
         if -self.threshold_A <= difference <= self.threshold_A:
             if self.FSM_state != 1:
                 self.FSM_state = 1
-                logfile.write("{}: [-A..A], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
+                logfile.write("{}, [-A..A], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
 
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
@@ -141,7 +144,7 @@ class CSGen:
         elif self.threshold_A < difference <= self.threshold_B:
             if self.FSM_state != 2:
                 self.FSM_state = 2
-                logfile.write("{}: (A..B], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
+                logfile.write("{}, (A..B], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             # slow down local clock by increasing count_to proportionally to the difference
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
@@ -150,13 +153,13 @@ class CSGen:
         elif difference > self.threshold_B:
             if self.FSM_state != 3:
                 self.FSM_state = 3
-                logfile.write("{}: (B..inf], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
+                logfile.write("{}, (B..inf], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get(1)
         elif -self.threshold_B <= difference < -self.threshold_A:
             if self.FSM_state != 4:
                 self.FSM_state = 4
-                logfile.write("{}: (-A..-B], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
+                logfile.write("{}, (-A..-B], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             # do a correction to speed up local clock by making count_to smaller
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)
@@ -165,18 +168,17 @@ class CSGen:
         elif difference < - self.threshold_B:
             if self.FSM_state != 5:
                 self.FSM_state = 5
-                logfile.write("{}: [-inf..-B), {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
+                logfile.write("{}, [-inf..-B), {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get(1)
         else:
             if self.FSM_state != 6:
                 self.FSM_state = 6
                 logfile.write("Donkey\n")
-                logfile.write("{}: {}-{}={}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
+                logfile.write("{}, {}-{}={}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
 
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
-# This STILL NEEDS TO DEPEND ON GPTP TIME! Perhaps an "is active" flag?
 class CLKDIV:
     multiplier = 24756
 
@@ -236,5 +238,5 @@ def plots():
 
 if __name__ == '__main__':
     sim = GPTPGenerator()
-    sim.run(9999999)
-    plots()
+    sim.run(int(99999999/2))
+    # plots()
