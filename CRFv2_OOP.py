@@ -212,7 +212,6 @@ def plot_square_wave():
     plt.title("Waveform")
     plt.ylabel('Amplitude')
     plt.xlabel("Time")
-    # x_locs, labels = plt.xticks()
     plt.xticks(srcmclk[::4], srcmclk[::4], rotation='vertical')
     plt.yticks([0, 1], [0, 1])
     ax = plt.gca()
