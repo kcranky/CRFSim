@@ -10,7 +10,6 @@ period_ocw = int(1/1000 * pow(10, 9))  # period of the output/control wave to th
 count_48 = 0
 
 
-
 def main(time):
     """
     Runs the relevant processes by using nS timing as a step through process

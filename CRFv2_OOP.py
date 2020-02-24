@@ -6,6 +6,8 @@ from queue import Queue
 from datetime import datetime
 import matplotlib.pyplot as plt
 
+import clock_recovery_algos
+
 now = datetime.now()
 simtime = now.strftime("%Y-%m-%d-%H%M%S")
 logfile = open("{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
@@ -74,13 +76,7 @@ class SourceMClk:
 
 # Module responsible for creating the output/control wave to the CS2000
 class CSGen:
-    # CRF-22 in F.12 specifies timestamps must be within +-5% of the media sample period.
-    # so for an "accurate" clock, we'll set threshold_A to be 5% of the period
-    threshold_A = 1041  # 5% of the period in nS
-    # TODO: Double check the value of threshold_B
-    # we're generating TS every 160 MClk. That means the greatest a difference can be is halfway between timestamps
-    # Should threshold_B, which decides when another Timestamp is fetched, be 50% of the difference between timestamps?
-    threshold_B = 1666666  # period of Mclk in nS * 80, rounded down
+
     FSM_state = 0
 
     def __init__(self):
@@ -114,7 +110,6 @@ class CSGen:
 
     def compare(self, gptp_time, txfifo, localfifo):
         global logfile
-        # print("comparing!")
         # the first time we call this method, we need to initialise the timestamps
         if localfifo.qsize() > 0 and txfifo.qsize() > 0 and self.local_timestamp is None:
             self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
@@ -130,52 +125,9 @@ class CSGen:
 
         # this will run comparisons between the received TS and the generated gPTP timestamp
 
-        difference = self.local_timestamp - self.rx_timestamp
+        shift, todo = clock_recovery_algos.rev1(gptp_time, self.local_timestamp, self.rx_timestamp)
 
-        if -self.threshold_A <= difference <= self.threshold_A:
-            if self.FSM_state != 1:
-                self.FSM_state = 1
-                logfile.write("{}, [-A..A], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
 
-            if txfifo.qsize() != 0:
-                self.rx_timestamp = txfifo.get(1)
-            if localfifo.qsize() != 0:
-                self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
-        elif self.threshold_A < difference <= self.threshold_B:
-            if self.FSM_state != 2:
-                self.FSM_state = 2
-                logfile.write("{}, (A..B], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
-            # slow down local clock by increasing count_to proportionally to the difference
-            if txfifo.qsize() != 0:
-                self.rx_timestamp = txfifo.get(1)
-            if localfifo.qsize() != 0:
-                self.local_timestamp = localfifo.get(1)
-        elif difference > self.threshold_B:
-            if self.FSM_state != 3:
-                self.FSM_state = 3
-                logfile.write("{}, (B..inf], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
-            if txfifo.qsize() != 0:
-                self.rx_timestamp = txfifo.get(1)
-        elif -self.threshold_B <= difference < -self.threshold_A:
-            if self.FSM_state != 4:
-                self.FSM_state = 4
-                logfile.write("{}, (-A..-B], {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
-            # do a correction to speed up local clock by making count_to smaller
-            if localfifo.qsize() != 0:
-                self.local_timestamp = localfifo.get(1)
-            if txfifo.qsize() != 0:
-                self.rx_timestamp = txfifo.get(1)
-        elif difference < - self.threshold_B:
-            if self.FSM_state != 5:
-                self.FSM_state = 5
-                logfile.write("{}, [-inf..-B), {} , {}, {}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
-            if localfifo.qsize() != 0:
-                self.local_timestamp = localfifo.get(1)
-        else:
-            if self.FSM_state != 6:
-                self.FSM_state = 6
-                logfile.write("Donkey\n")
-                logfile.write("{}, {}-{}={}\n".format(gptp_time, self.local_timestamp, self.rx_timestamp, difference))
 
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
@@ -238,5 +190,5 @@ def plots():
 
 if __name__ == '__main__':
     sim = GPTPGenerator()
-    sim.run(int(99999999/2))
+    sim.run(int(999/3))
     # plots()
