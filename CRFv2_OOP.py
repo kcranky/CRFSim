@@ -5,8 +5,7 @@ Attempt at an OOP solution for the Rev2 CR Algorithm
 from queue import Queue
 from datetime import datetime
 import matplotlib.pyplot as plt
-
-import clock_recovery_algos
+import clock_recovery_algos as cra
 
 now = datetime.now()
 simtime = now.strftime("%Y-%m-%d-%H%M%S")
@@ -17,6 +16,8 @@ srcmclk = []
 srcmclk_y = []
 genmclk = []
 genmclk_y = []
+
+recovery_state = None
 
 
 # The mock gPTP module
@@ -110,6 +111,7 @@ class CSGen:
 
     def compare(self, gptp_time, txfifo, localfifo):
         global logfile
+        global recovery_state
         # the first time we call this method, we need to initialise the timestamps
         if localfifo.qsize() > 0 and txfifo.qsize() > 0 and self.local_timestamp is None:
             self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
@@ -125,9 +127,21 @@ class CSGen:
 
         # this will run comparisons between the received TS and the generated gPTP timestamp
 
-        shift, todo = clock_recovery_algos.rev1(gptp_time, self.local_timestamp, self.rx_timestamp)
+        shift, recovery_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, recovery_state)
 
-
+        if recovery_state in [0, 1, 3]:
+            if txfifo.qsize() != 0:
+                rx_timestamp = txfifo.get(1)
+            if localfifo.qsize() != 0:
+                local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
+        elif recovery_state == 2:
+            if localfifo.qsize() != 0:
+                self.local_timestamp = localfifo.get(1)
+        elif recovery_state == 4:
+            if txfifo.qsize() != 0:
+                self.rx_timestamp = txfifo.get(1)
+        elif recovery_state == 5:
+            pass
 
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
@@ -190,5 +204,5 @@ def plots():
 
 if __name__ == '__main__':
     sim = GPTPGenerator()
-    sim.run(int(999/3))
+    sim.run(int(28333*200*3))
     # plots()
