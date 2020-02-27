@@ -40,8 +40,8 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     difference = local_timestamp - rx_timestamp
 
     if -threshold_a <= difference <= threshold_a:
-        if prev_state != State.DIFF_MATCH:
-            state = State.DIFF_MATCH
+        state = State.DIFF_MATCH
+        if prev_state != state:
             logfile.write(
                 "{}, [-A..A], {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 

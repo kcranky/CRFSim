@@ -128,19 +128,20 @@ class CSGen:
         # this will run comparisons between the received TS and the generated gPTP timestamp
 
         shift, recovery_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, recovery_state)
+        # print(shift, recovery_state)
 
-        if recovery_state in [0, 1, 3]:
+        if recovery_state in [cra.State.DIFF_MATCH, cra.State.DIFF_LT,  cra.State.DIFF_GT]:
             if txfifo.qsize() != 0:
-                rx_timestamp = txfifo.get(1)
+                self.rx_timestamp = txfifo.get()
             if localfifo.qsize() != 0:
-                local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
-        elif recovery_state == 2:
+                self.local_timestamp = localfifo.get()  # get a value with a 1s timeout
+        elif recovery_state == cra.State.DIFF_MLT:
             if localfifo.qsize() != 0:
-                self.local_timestamp = localfifo.get(1)
-        elif recovery_state == 4:
+                self.local_timestamp = localfifo.get()
+        elif recovery_state == cra.State.DIFF_MGT:
             if txfifo.qsize() != 0:
-                self.rx_timestamp = txfifo.get(1)
-        elif recovery_state == 5:
+                self.rx_timestamp = txfifo.get()
+        elif recovery_state == cra.State.DIFF_ERROR:
             pass
 
 
@@ -204,5 +205,5 @@ def plots():
 
 if __name__ == '__main__':
     sim = GPTPGenerator()
-    sim.run(int(28333*200*3))
+    sim.run(int(283333*1600))
     # plots()
