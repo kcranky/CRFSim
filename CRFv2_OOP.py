@@ -82,7 +82,9 @@ class CSGen:
 
     def __init__(self):
         self.state = 0
-        self.count_to = 500  # the value the CSGen must count to
+        self.count_to = 5000000  # the value the CSGen must count to
+        # TODO: count_to calculation:
+        # 500 nS =
         self.local_count = 0
         self.local_count_scale = 1  # How many times slower is the CS2000 driver module than the gPTP module?
 
@@ -147,7 +149,7 @@ class CSGen:
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
 class CLKDIV:
-    multiplier = 24756
+    multiplier = 24756000
 
     # TODO: Look at the maths behind the CS2k module that was documented in
     # The output wave is given by 24576*source wave
@@ -164,7 +166,7 @@ class CLKDIV:
         # in order to multiply up and determine when to trigger
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
-        rate = difference * 24576  # this gives us how often we toggle the "interim" wave
+        rate = difference * self.multiplier  # this gives us how often we toggle the "interim" wave
         self.output_freq = rate/512.0
         # print("time={}; diff={}; rate={}; mclk_rate={}".format(gptp_time, difference, rate, mclk_rate))
 
@@ -181,6 +183,7 @@ class CLKDIV:
                 genmclk.append(gptp_time)
                 genmclk_y.append(self.state*0.5)
                 if self.state == 1:
+                    print("{} - RISE MINION".format(gptp_time))
                     localfifo.put(gptp_time)
 
 
