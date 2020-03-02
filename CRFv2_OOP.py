@@ -7,11 +7,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import clock_recovery_algos as cra
 
-now = datetime.now()
-simtime = now.strftime("%Y-%m-%d-%H%M%S")
-logfile = open("{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
-logfile.write("gptp_time, range, self.local_timestamp, self.rx_timestamp, difference\n")
-
+# Arrays for plots
 srcmclk = []
 srcmclk_y = []
 genmclk = []
@@ -50,7 +46,7 @@ class GPTPGenerator:
 # The Source media clock
 class SourceMClk:
     base_freq = 48000.0
-    base_period = 1/base_freq*pow(10, 9) # convert to nS
+    base_period = 1/base_freq*pow(10, 9)  # convert to nS
 
     def __init__(self):
         self.state = 0
@@ -82,9 +78,8 @@ class CSGen:
 
     def __init__(self):
         self.state = 0
-        self.count_to = 5000000  # the value the CSGen must count to
-        # TODO: count_to calculation:
-        # 500 nS =
+        self.count_to = 5000  # the value the CSGen must count to TODO: should be 5000000
+        self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
         self.local_count_scale = 1  # How many times slower is the CS2000 driver module than the gPTP module?
 
@@ -103,11 +98,13 @@ class CSGen:
         self.clkdiv.check(gptp_time, localfifo)
 
         # this will control the o/c wave
-        if self.local_count == self.count_to:
+        # print(self.count_to, self.local_count)
+        if int(self.local_count) == int(self.count_to):
+            print("{} - reached count_to".format(gptp_time))
             self.local_count = 0
             # if it's a rising edge, we need to call the clk_div
             if self.state == 0:
-                # print("{} - Rising OCW".format(gptp_time))
+                print("{} - Rising OCW".format(gptp_time))
                 self.clkdiv.activate(gptp_time)
             self.state = not self.state
 
@@ -146,45 +143,42 @@ class CSGen:
         elif recovery_state == cra.State.DIFF_ERROR:
             pass
 
+    def adjust_count_to(self, shift_value):
+        self.count_to = self.count_to + shift_value
+
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
 class CLKDIV:
-    multiplier = 24756000
+    multiplier = 24756  # TODO: should be 24756000
 
     # TODO: Look at the maths behind the CS2k module that was documented in
     # The output wave is given by 24576*source wave
     # This "interim wave" is the divided down by 512 to generate a 48kHz wave
     def __init__(self):
-        self.active = True
         self.state = 0
         self.last_trigger = 0
         self.output_freq = 48000.0
 
     def activate(self, gptp_time):
-        self.active = True
         # we need to determine the rate at which the "activate" signals come in,
         # in order to multiply up and determine when to trigger
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
         rate = difference * self.multiplier  # this gives us how often we toggle the "interim" wave
         self.output_freq = rate/512.0
-        # print("time={}; diff={}; rate={}; mclk_rate={}".format(gptp_time, difference, rate, mclk_rate))
+        print("{} - diff={}; rate={}; output_freq={}".format(gptp_time, difference, rate, self.output_freq))
 
     def check(self, gptp_time, localfifo):
         global genmclk
         global genmclk_y
         # This function gets called every ns.
-        if self.active:
-            # if it is active, we need to see if the current gptp time is valid for it's multiplier
-            if int(gptp_time % ((1/self.output_freq*pow(10, 9))/2)) == 0:
-                # print("{} Toggle generated Mclk".format(gptp_time))
-                # We need to write to the Local buffer here
-                self.state = not self.state
-                genmclk.append(gptp_time)
-                genmclk_y.append(self.state*0.5)
-                if self.state == 1:
-                    print("{} - RISE MINION".format(gptp_time))
-                    localfifo.put(gptp_time)
+        # if it is active, we need to see if the current gptp time is valid for it's multiplier
+        if int(gptp_time % ((1/self.output_freq*pow(10, 9))/2)) == 0:
+            self.state = not self.state
+            genmclk.append(gptp_time)
+            genmclk_y.append(self.state*0.5)
+            if self.state == 1:
+                localfifo.put(gptp_time)
 
 
 def plots():
@@ -207,6 +201,10 @@ def plots():
 
 
 if __name__ == '__main__':
+    now = datetime.now()
+    simtime = now.strftime("%Y-%m-%d-%H%M%S")
+    logfile = open("{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
+    logfile.write("gptp_time, range, self.local_timestamp, self.rx_timestamp, difference\n")
     sim = GPTPGenerator()
-    sim.run(int(283333*1600))
+    sim.run(int(283333*160))
     # plots()
