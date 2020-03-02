@@ -63,11 +63,11 @@ class SourceMClk:
             # need to generate a timestamp every 160 cycles
             if self.state == 1:
                 self.event_count = self.event_count + 1
-            if self.event_count == 160:
-                print("{} - 160th MClk".format(gptp_time))
-                # Add to the tx buffer and print array
-                self.event_count = 0
-                txfifo.put(gptp_time)
+                if self.event_count == 160:
+                    print("{} - 160th MClk".format(gptp_time))
+                    # Add to the tx buffer and print array
+                    self.event_count = 0
+                    txfifo.put(gptp_time)
 
 
 # Module responsible for creating the output/control wave to the CS2000
@@ -175,7 +175,7 @@ class CLKDIV:
         if int(gptp_time % ((1/self.output_freq*pow(10, 9))/2)) == 0:
             self.state = not self.state
             genmclk.append(gptp_time)
-            genmclk_y.append(self.state*0.5)
+            genmclk_y.append(self.state*0.5) # we do 0.5 so we can distinguish
             if self.state == 1:
                 localfifo.put(gptp_time)
 
