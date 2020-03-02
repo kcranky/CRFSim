@@ -39,11 +39,12 @@ class GPTPGenerator:
             csgen.ocw_control(i, self.localfifo)
             csgen.compare(i, self.txfifo, self.localfifo)
         logfile.write("{}, {}\n".format(self.txfifo.qsize(), self.localfifo.qsize()))
-        logfile.write("Finished simulation at {}\n".format(i))
+        logfile.write("{}, Finished sim\n".format(i))
         logfile.close()
 
 
 # The Source media clock
+# Validated 02/03/2020
 class SourceMClk:
     base_freq = 48000.0
     base_period = 1/base_freq*pow(10, 9)  # convert to nS
@@ -148,7 +149,7 @@ class CSGen:
 
 # Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
 class CLKDIV:
-    multiplier = 24756  # TODO: should be 24756000
+    multiplier = 24756
 
     # TODO: Look at the maths behind the CS2k module that was documented in
     # The output wave is given by 24576*source wave
@@ -157,6 +158,7 @@ class CLKDIV:
         self.state = 0
         self.last_trigger = 0
         self.output_freq = 48000.0
+        self.output_period = 1/self.output_freq*pow(10, 9)
 
     def activate(self, gptp_time):
         # we need to determine the rate at which the "activate" signals come in,
@@ -165,6 +167,7 @@ class CLKDIV:
         self.last_trigger = gptp_time
         rate = difference * self.multiplier  # this gives us how often we toggle the "interim" wave
         self.output_freq = rate/512.0
+        self.output_period = 1/self.output_freq*pow(10, 9)
         # print("{} - diff={}; rate={}; output_freq={}".format(gptp_time, difference, rate, self.output_freq))
 
     def check(self, gptp_time, localfifo):
@@ -172,11 +175,12 @@ class CLKDIV:
         global genmclk_y
         # This function gets called every ns.
         # if it is active, we need to see if the current gptp time is valid for it's multiplier
-        if int(gptp_time % ((1/self.output_freq*pow(10, 9))/2)) == 0:
+        if int(gptp_time % self.output_period/2) == 0:
             self.state = not self.state
             genmclk.append(gptp_time)
             genmclk_y.append(self.state*0.5) # we do 0.5 so we can distinguish
             if self.state == 1:
+                # print('{} - genclk'.format(gptp_time))
                 localfifo.put(gptp_time)
 
 
