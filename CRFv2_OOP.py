@@ -210,4 +210,4 @@ if __name__ == '__main__':
     logfile.write("gptp_time, range, self.local_timestamp, self.rx_timestamp, difference\n")
     sim = GPTPGenerator()
     sim.run(int(283333*160))
-    # plots()
+    plots()
