@@ -50,7 +50,7 @@ class SourceMClk:
 
     def __init__(self):
         self.state = 0
-        self.event_count = 0
+        self.event_count = -1
 
     def trigger(self, gptp_time, txfifo):
         global srcmclk
@@ -63,12 +63,11 @@ class SourceMClk:
             # need to generate a timestamp every 160 cycles
             if self.state == 1:
                 self.event_count = self.event_count + 1
-            if self.event_count == 161:
-                # print("{} - 160th MClk".format(gptp_time))
+            if self.event_count == 160:
+                print("{} - 160th MClk".format(gptp_time))
                 # Add to the tx buffer and print array
                 self.event_count = 0
-                if self.state == 1:
-                    txfifo.put(gptp_time)
+                txfifo.put(gptp_time)
 
 
 # Module responsible for creating the output/control wave to the CS2000
@@ -78,7 +77,7 @@ class CSGen:
 
     def __init__(self):
         self.state = 0
-        self.count_to = 5000  # the value the CSGen must count to TODO: should be 5000000
+        self.count_to = 5000000  # the value the CSGen must count to
         self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
         self.local_count_scale = 1  # How many times slower is the CS2000 driver module than the gPTP module?
@@ -100,7 +99,7 @@ class CSGen:
         # this will control the o/c wave
         # print(self.count_to, self.local_count)
         if int(self.local_count) == int(self.count_to):
-            print("{} - reached count_to".format(gptp_time))
+            # print("{} - reached count_to".format(gptp_time))
             self.local_count = 0
             # if it's a rising edge, we need to call the clk_div
             if self.state == 0:
@@ -166,7 +165,7 @@ class CLKDIV:
         self.last_trigger = gptp_time
         rate = difference * self.multiplier  # this gives us how often we toggle the "interim" wave
         self.output_freq = rate/512.0
-        print("{} - diff={}; rate={}; output_freq={}".format(gptp_time, difference, rate, self.output_freq))
+        # print("{} - diff={}; rate={}; output_freq={}".format(gptp_time, difference, rate, self.output_freq))
 
     def check(self, gptp_time, localfifo):
         global genmclk
