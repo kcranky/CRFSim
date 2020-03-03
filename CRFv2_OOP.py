@@ -224,6 +224,7 @@ if __name__ == '__main__':
     logfile = open("dataout/{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
     logfile.write("gptp_time, range, local_timestamp, rx_timestamp, difference\n")
     sim = GPTPGenerator()
-    sim.run(int(28333*1600/4))
-    sim.save_localfifo()
+    sim.run(int(28333*160*10))
+
+    # sim.save_localfifo()
     # plots()
