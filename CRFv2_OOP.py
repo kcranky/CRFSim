@@ -121,7 +121,6 @@ class CSGen:
                 # print("{} - Rising OCW".format(gptp_time))
                 self.clkdiv.activate(gptp_time)
 
-
     def compare(self, gptp_time, txfifo, localfifo):
         """
         Compares the received and generated timestamp
@@ -185,8 +184,6 @@ class CLKDIV:
         :param gptp_time:
         :return:
         """
-        # if self.last_trigger != 0:
-        #     gptp_time = gptp_time+ 1 # hacky solution?
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
         rate = 1/(difference/(1*pow(10,9))) * self.multiplier
@@ -199,9 +196,6 @@ class CLKDIV:
         """
         This function gets called every ns.
         We see if the current gPTP time would be a point at which the wave gets triggered
-        TODO I don't know if I can do this...
-            because we need to see if the gPTP time LESS THE LAST OUTPUT TIME is a multiple?
-            Or would it be from the time the trigger changes frequency, or some other value?
         :param gptp_time:
         :param localfifo:
         :return:
