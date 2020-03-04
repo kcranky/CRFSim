@@ -185,13 +185,15 @@ class CLKDIV:
         :param gptp_time:
         :return:
         """
+        # if self.last_trigger != 0:
+        #     gptp_time = gptp_time+ 1 # hacky solution?
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
         rate = 1/(difference/(1*pow(10,9))) * self.multiplier
         self.output_freq = rate/512.0
         self.output_period = 1/self.output_freq*pow(10, 9)
         # Enable this line to see changes to the output frequency in real time
-        # print("{} - last_trigger={}; diff={}; rate={}; output_freq={}".format(gptp_time, self.last_trigger, difference, rate, self.output_freq))
+        print("{} - last_trigger={}; diff={}; rate={}; output_freq={}".format(gptp_time, self.last_trigger, difference, rate, self.output_freq))
 
     def check(self, gptp_time, localfifo):
         """
@@ -205,7 +207,12 @@ class CLKDIV:
         :return:
         """
         global genmclk, genmclk_y
-        if int((gptp_time-self.last_trigger) % (self.output_period/2)) == 0:
+        if gptp_time < 2000000:
+            comp_val = gptp_time-self.last_trigger
+        else:
+            comp_val = gptp_time-self.last_trigger-1
+
+        if int(comp_val % (self.output_period/2)) == 0:
             print(gptp_time)
             self.state = not self.state
             genmclk.append(gptp_time)
