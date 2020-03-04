@@ -87,8 +87,8 @@ class CSGen:
     """
     This class is responsible for generating the output/control wave to the CS2000 (CLKDIV)
     """
-    def __init__(self):
-        self.state = 1
+    def __init__(self, offset=120):
+        self.state = 0
         self.count_to = 500000  # the value the CSGen must count to
         self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
@@ -102,10 +102,19 @@ class CSGen:
 
         self.recovery_state = None
 
+        self.offset = offset
+
     def ocw_control(self, gptp_time, localfifo):
-        # increase local count by a related amount
         # TODO: Cater for self.local_count_scale here
         self.local_count = self.local_count + 1
+
+        # Handle the initial offset
+        if self.offset is not None:
+            if self.local_count == self.offset:
+                self.offset = None
+                self.local_count = 0
+            else:
+                return
 
         # we need to check the gptp output every ns, so
         self.clkdiv.check(gptp_time, localfifo)
@@ -118,7 +127,7 @@ class CSGen:
             # if it's a rising edge, we need to call the clk_div
             self.state = not self.state
             if self.state == 1:
-                # print("{} - Rising OCW".format(gptp_time))
+                print("{} - Rising OCW".format(gptp_time))
                 self.clkdiv.activate(gptp_time)
 
     def compare(self, gptp_time, txfifo, localfifo):
@@ -207,7 +216,7 @@ class CLKDIV:
             comp_val = gptp_time-self.last_trigger-1
 
         if int(comp_val % (self.output_period/2)) == 0:
-            print(gptp_time)
+            # print(gptp_time)
             self.state = not self.state
             genmclk.append(gptp_time)
             genmclk_y.append(self.state*0.5)  # multiply by 0.5 to distinguish on graph
