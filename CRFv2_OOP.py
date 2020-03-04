@@ -30,8 +30,6 @@ class GPTPGenerator:
     """
     Acts as the gPTP module and the source of time for all modules in the simulation
     """
-    current_value = 0
-
     def __init__(self):
         self.txfifo = Queue()
         self.localfifo = Queue()
@@ -42,7 +40,6 @@ class GPTPGenerator:
         csgen = CSGen()
         # Run the simulation
         for i in range(duration_nanoseconds+1):
-            self.current_value += 1
             # Call all relevant functions
             sourcecmclk.trigger(i, self.txfifo) # see if we need to generate a mediaclock
             csgen.ocw_control(i, self.localfifo)
@@ -69,7 +66,7 @@ class SourceMClk:
     base_period = 1/base_freq*pow(10, 9)  # convert to nS
 
     def __init__(self):
-        self.state = 0
+        self.state = 1
         self.event_count = -1
 
     def trigger(self, gptp_time, txfifo):
@@ -90,10 +87,8 @@ class CSGen:
     """
     This class is responsible for generating the output/control wave to the CS2000 (CLKDIV)
     """
-    FSM_state = 0
-
     def __init__(self):
-        self.state = 0
+        self.state = 1
         self.count_to = 500000  # the value the CSGen must count to
         self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
@@ -104,6 +99,8 @@ class CSGen:
         # define current timestamp values
         self.local_timestamp = None
         self.rx_timestamp = None
+
+        self.recovery_state = None
 
     def ocw_control(self, gptp_time, localfifo):
         # increase local count by a related amount
@@ -119,10 +116,11 @@ class CSGen:
             # print("{} - reached count_to".format(gptp_time))
             self.local_count = 0
             # if it's a rising edge, we need to call the clk_div
+            self.state = not self.state
             if self.state == 1:
                 # print("{} - Rising OCW".format(gptp_time))
                 self.clkdiv.activate(gptp_time)
-            self.state = not self.state
+
 
     def compare(self, gptp_time, txfifo, localfifo):
         """
@@ -148,22 +146,21 @@ class CSGen:
             return
 
         # Algorithm 1
-        shift, recovery_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
+        shift, self.recovery_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
         # print(shift, recovery_state)
 
-        # TODO:
         if self.recovery_state in [cra.State.DIFF_MATCH, cra.State.DIFF_LT,  cra.State.DIFF_GT]:
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get()
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get()
-        elif recovery_state == cra.State.DIFF_MLT:
+        elif self.recovery_state == cra.State.DIFF_MLT:
             if localfifo.qsize() != 0:
                 self.local_timestamp = localfifo.get()
-        elif recovery_state == cra.State.DIFF_MGT:
+        elif self.recovery_state == cra.State.DIFF_MGT:
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get()
-        elif recovery_state == cra.State.DIFF_ERROR:
+        elif self.recovery_state == cra.State.DIFF_ERROR:
             pass
 
     def adjust_count_to(self, shift_value):
@@ -177,7 +174,7 @@ class CLKDIV:
     multiplier = 24576
 
     def __init__(self):
-        self.state = 0
+        self.state = 1
         self.last_trigger = 0
         self.output_freq = 48000.0
         self.output_period = (1/self.output_freq)*pow(10, 9)
@@ -193,20 +190,23 @@ class CLKDIV:
         rate = 1/(difference/(1*pow(10,9))) * self.multiplier
         self.output_freq = rate/512.0
         self.output_period = 1/self.output_freq*pow(10, 9)
-        print("{} - last_trigger={}; diff={}; rate={}; output_freq={}".format(gptp_time, self.last_trigger, difference, rate, self.output_freq))
+        # Enable this line to see changes to the output frequency in real time
+        # print("{} - last_trigger={}; diff={}; rate={}; output_freq={}".format(gptp_time, self.last_trigger, difference, rate, self.output_freq))
 
     def check(self, gptp_time, localfifo):
         """
         This function gets called every ns.
         We see if the current gPTP time would be a point at which the wave gets triggered
         TODO I don't know if I can do this...
-            because we need to see if the gPTP time LESS THE LAST TRIGGER TIME is a multiple?
+            because we need to see if the gPTP time LESS THE LAST OUTPUT TIME is a multiple?
+            Or would it be from the time the trigger changes frequency, or some other value?
         :param gptp_time:
         :param localfifo:
         :return:
         """
         global genmclk, genmclk_y
-        if int(gptp_time % (self.output_period/2)) == 0:
+        if int((gptp_time-self.last_trigger) % (self.output_period/2)) == 0:
+            print(gptp_time)
             self.state = not self.state
             genmclk.append(gptp_time)
             genmclk_y.append(self.state*0.5)  # multiply by 0.5 to distinguish on graph
@@ -237,7 +237,7 @@ if __name__ == '__main__':
     logfile = open("dataout/{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
     logfile.write("gptp_time, range, local_timestamp, rx_timestamp, difference\n")
     sim = GPTPGenerator()
-    sim.run(int(28333*10))
+    sim.run(int(28333*160*5))
     logfile.close()
     # sim.save_localfifo()
-    plots()
+    # plots()
