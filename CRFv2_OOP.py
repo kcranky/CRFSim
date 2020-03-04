@@ -1,5 +1,16 @@
 """
-Attempt at an OOP solution for the Rev2 CR Algorithm
+Attempt at an OOP solution for the Rev2 Clock Recovery Algorithm
+
+Keegan Crankshaw
+February 2020
+
+TODO:
+    - Text/Readability changes
+    - Better Class implementation
+    - Better TLM implementation
+    - implement different clock rates for the CS2000 vs full level simulation
+    - Add an offset to set initial difference between clocks
+    - See if we can move away from global variables?
 """
 
 from queue import Queue
@@ -14,12 +25,11 @@ srcmclk_y = []
 genmclk = []
 genmclk_y = []
 
-recovery_state = None
 
-
-# The mock gPTP module
-# this is going to be responsible for controlling everything - the "top level module"
 class GPTPGenerator:
+    """
+    Acts as the gPTP module and the source of time for all modules in the simulation
+    """
     current_value = 0
 
     def __init__(self):
@@ -28,20 +38,17 @@ class GPTPGenerator:
 
     def run(self, duration_nanoseconds):
         global logfile
-        # Instantiate all the objects
         sourcecmclk = SourceMClk()
         csgen = CSGen()
         # Run the simulation
         for i in range(duration_nanoseconds+1):
             self.current_value += 1
-            # print("The gPTP time is {}".format(i))
             # Call all relevant functions
-            sourcecmclk.trigger(i, self.txfifo)
+            sourcecmclk.trigger(i, self.txfifo) # see if we need to generate a mediaclock
             csgen.ocw_control(i, self.localfifo)
             csgen.compare(i, self.txfifo, self.localfifo)
         logfile.write("{}, {}\n".format(self.txfifo.qsize(), self.localfifo.qsize()))
         logfile.write("{}, Finished sim\n".format(i))
-        logfile.close()
 
     def save_localfifo(self):
         outfile = open("dataout/{}-CRFv2_OOP_LocalFifo.csv".format(simtime), "w+")
@@ -54,6 +61,10 @@ class GPTPGenerator:
 # The Source media clock
 # Validated 02/03/2020
 class SourceMClk:
+    """
+    Source Media Clock generation
+    May be able to do this separately and pull in a file for comparison, as opposed to generating dynamically
+    """
     base_freq = 48000.0
     base_period = 1/base_freq*pow(10, 9)  # convert to nS
 
@@ -62,9 +73,7 @@ class SourceMClk:
         self.event_count = -1
 
     def trigger(self, gptp_time, txfifo):
-        global srcmclk
-        global srcmclk_y
-        # TODO : This isn't a perfect software model, but it's the best we can do for now
+        global srcmclk, srcmclk_y
         if int(gptp_time % (self.base_period/2)) == 0:
             self.state = not self.state
             srcmclk.append(gptp_time)
@@ -73,15 +82,14 @@ class SourceMClk:
             if self.state == 1:
                 self.event_count = self.event_count + 1
                 if self.event_count == 160:
-                    # print("{} - 160th MClk".format(gptp_time))
-                    # Add to the tx buffer
                     self.event_count = 0
                     txfifo.put(gptp_time)
 
 
-# Module responsible for creating the output/control wave to the CS2000
 class CSGen:
-
+    """
+    This class is responsible for generating the output/control wave to the CS2000 (CLKDIV)
+    """
     FSM_state = 0
 
     def __init__(self):
@@ -89,9 +97,9 @@ class CSGen:
         self.count_to = 500000  # the value the CSGen must count to
         self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
-        self.local_count_scale = 1  # How many times slower is the CS2000 driver module than the gPTP module?
+        self.local_count_scale = 1  # TODO: How many times slower is the CS2000 driver module than the gPTP module?
 
-        self.clkdiv = CLKDIV()  # TODO: probably not the best place to put this?
+        self.clkdiv = CLKDIV()  # TODO: is this the best place to instantiate this?
 
         # define current timestamp values
         self.local_timestamp = None
@@ -117,8 +125,20 @@ class CSGen:
             self.state = not self.state
 
     def compare(self, gptp_time, txfifo, localfifo):
+        """
+        Compares the received and generated timestamp
+        :param gptp_time:
+        :param txfifo:
+        :param localfifo:
+        :return:
+
+        TODO
+            - Implement this without a local FIFO and see if performance changes?
+            - Need to make a decision about checking timestamps based on their current gPTP timing.
+            - For example, if I make a correction, from timestamps that happened a few ms ago,
+                how long should I keep making that correction for?
+        """
         global logfile
-        global recovery_state
         # the first time we call this method, we need to initialise the timestamps
         if localfifo.qsize() > 0 and txfifo.qsize() > 0 and self.local_timestamp is None:
             self.local_timestamp = localfifo.get(1)  # get a value with a 1s timeout
@@ -127,18 +147,12 @@ class CSGen:
         if self.local_timestamp is None or self.rx_timestamp is None:
             return
 
-        # TODO: Need to make a decision about checking timestamps based on their current gPTP timing.
-        # TODO: For example, if I make a correction, from timestamps that happened a few ms ago,
-        # TODO: how long should I keep making that correction for?
-        # TODO: Need to implement Phase_shift_sim to confirm these assumptions experimentally
-
-        # this will run comparisons between the received TS and the generated gPTP timestamp
-
-        shift, recovery_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, recovery_state)
+        # Algorithm 1
+        shift, recovery_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
         # print(shift, recovery_state)
 
         # TODO:
-        if recovery_state in [cra.State.DIFF_MATCH, cra.State.DIFF_LT,  cra.State.DIFF_GT]:
+        if self.recovery_state in [cra.State.DIFF_MATCH, cra.State.DIFF_LT,  cra.State.DIFF_GT]:
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get()
             if localfifo.qsize() != 0:
@@ -156,13 +170,12 @@ class CSGen:
         self.count_to = self.count_to + shift_value
 
 
-# Takes the CS2000 OCW, multiplies it up a bunch, and gives us a 48khz out
 class CLKDIV:
+    """
+    Responsible for mimicking the CS2000 and the clock divider module
+    """
     multiplier = 24576
 
-    # TODO: Look at the maths behind the CS2k module that was documented in
-    # The output wave is given by 24576*source wave
-    # This "interim wave" is the divided down by 512 to generate a 48kHz wave
     def __init__(self):
         self.state = 0
         self.last_trigger = 0
@@ -170,39 +183,39 @@ class CLKDIV:
         self.output_period = (1/self.output_freq)*pow(10, 9)
 
     def activate(self, gptp_time):
-        # we need to determine the rate at which the "activate" signals come in,
-        # in order to multiply up and determine when to trigger
+        """
+        Determines the output frequency of the "interim" wave and devices it by 512 to mimic the ouput module
+        :param gptp_time:
+        :return:
+        """
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
-        # TODO : May need to convert to Hz first!
-        rate = 1/(difference/(1*pow(10,9))) * self.multiplier  # this gives us how often we toggle the "interim" wave in Hz
+        rate = 1/(difference/(1*pow(10,9))) * self.multiplier
         self.output_freq = rate/512.0
         self.output_period = 1/self.output_freq*pow(10, 9)
         print("{} - last_trigger={}; diff={}; rate={}; output_freq={}".format(gptp_time, self.last_trigger, difference, rate, self.output_freq))
 
     def check(self, gptp_time, localfifo):
-        global genmclk
-        global genmclk_y
-        # This function gets called every ns.
-        # if it is active, we need to see if the current gptp time is valid for it's multiplier
+        """
+        This function gets called every ns.
+        We see if the current gPTP time would be a point at which the wave gets triggered
+        TODO I don't know if I can do this...
+            because we need to see if the gPTP time LESS THE LAST TRIGGER TIME is a multiple?
+        :param gptp_time:
+        :param localfifo:
+        :return:
+        """
+        global genmclk, genmclk_y
         if int(gptp_time % (self.output_period/2)) == 0:
-
-            # print(gptp_time)
             self.state = not self.state
             genmclk.append(gptp_time)
-            genmclk_y.append(self.state*0.5) # we do 0.5 so we can distinguish
+            genmclk_y.append(self.state*0.5)  # multiply by 0.5 to distinguish on graph
             if self.state == 1:
-                # print(self.output_freq)
-                # print('{} - genclk'.format(gptp_time))
                 localfifo.put(gptp_time)
 
 
 def plots():
-    global srcmclk
-    global srcmclk_y
-    global genmclk
-    global genmclk_y
-    global simtime
+    global srcmclk, srcmclk_y, genmclk, genmclk_y, simtime
     plt.plot(srcmclk, srcmclk_y, color='blue', drawstyle='steps-post', linewidth=0.25)
     plt.plot(genmclk, genmclk_y, color='red', drawstyle='steps-post', linewidth=0.25)
     plt.title("Waveform")
@@ -224,7 +237,7 @@ if __name__ == '__main__':
     logfile = open("dataout/{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
     logfile.write("gptp_time, range, local_timestamp, rx_timestamp, difference\n")
     sim = GPTPGenerator()
-    sim.run(int(28333*160*10))
-
+    sim.run(int(28333*10))
+    logfile.close()
     # sim.save_localfifo()
-    # plots()
+    plots()
