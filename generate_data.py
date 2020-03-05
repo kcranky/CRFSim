@@ -1,6 +1,6 @@
 def generate_timestamps(freq, duration):
     """
-    Generate a list of timestamps for an expected duration at a specific frequency
+    Generate a list of timestamps in nS for a known duration at a specific frequency
     :param freq: frequency of the source oscillator
     :param duration: Duration in SECONDS
     :return:
