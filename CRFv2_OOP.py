@@ -11,6 +11,7 @@ TODO:
     - implement different clock rates for the CS2000 vs full level simulation
         - i.e. have modules run at different clock rates as opposed to hardcoded values?
     - See if we can move away from global variables?
+    - Implement the source clock seperately as opposed to generating values on the fly as is currently done
 """
 
 from queue import Queue
@@ -37,11 +38,11 @@ class GPTPGenerator:
     def run(self, duration_nanoseconds):
         global logfile
         sourcecmclk = SourceMClk()
-        csgen = CSGen(offset=None)
+        csgen = CSGen(offset=0)
         # Run the simulation
         for i in range(duration_nanoseconds+1):
             # Call all relevant functions
-            sourcecmclk.trigger(i, self.txfifo)  # see if we need to generate a mediaclock
+            sourcecmclk.trigger(i, self.txfifo)  # see if we need to generate a mediaclock this nS
             csgen.ocw_control(i, self.localfifo)
             csgen.compare(i, self.txfifo, self.localfifo)
         logfile.write("{}, {}\n".format(self.txfifo.qsize(), self.localfifo.qsize()))
@@ -56,18 +57,18 @@ class GPTPGenerator:
 
 
 # The Source media clock
-# Validated 02/03/2020
+# Validated 05/03/2020
 class SourceMClk:
     """
     Source Media Clock generation
-    May be able to do this separately and pull in a file for comparison, as opposed to generating dynamically
+    TODO: May be able to do this separately and pull in a file for comparison, as opposed to generating dynamically
     """
     base_freq = 48000.0
     base_period = 1/base_freq*pow(10, 9)  # convert to nS
 
     def __init__(self):
-        self.state = 1
-        self.event_count = -1
+        self.state = 0
+        self.event_count = 0
 
     def trigger(self, gptp_time, txfifo):
         global srcmclk, srcmclk_y
@@ -87,14 +88,14 @@ class CSGen:
     """
     This class is responsible for generating the output/control wave to the CS2000 (CLKDIV)
     """
-    def __init__(self, offset=None):
+    def __init__(self, offset=0):
         self.state = 1
         self.count_to = 500000  # the value the CSGen must count to
         self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
         self.local_count_scale = 1  # TODO: How many times slower is the CS2000 driver module than the gPTP module?
 
-        self.clkdiv = CLKDIV()  # TODO: is this the best place to instantiate this?
+        self.clkdiv = CLKDIV(offset)  # TODO: is this the best place to instantiate this?
 
         # define current timestamp values
         self.local_timestamp = None
@@ -109,15 +110,12 @@ class CSGen:
         self.local_count = self.local_count + 1
 
         # Handle the initial offset
-        if self.offset is not None:
-            if self.local_count == self.offset:
-                self.offset = None
+        if self.offset != 0:
+            if self.local_count >= self.offset:
+                self.offset = 0
                 self.local_count = 0
             else:
                 return
-
-        # we need to check the gptp output every ns, so
-        self.clkdiv.check(gptp_time, localfifo)
 
         # this will control the o/c wave
         # print(self.count_to, self.local_count)
@@ -128,6 +126,9 @@ class CSGen:
             self.state = not self.state
             if self.state == 1:
                 self.clkdiv.activate(gptp_time)
+
+        # we need to check the gptp output every ns, so
+        self.clkdiv.check(gptp_time, localfifo)
 
     def compare(self, gptp_time, txfifo, localfifo):
         """
@@ -180,27 +181,28 @@ class CLKDIV:
     """
     multiplier = 24576
 
-    def __init__(self):
-        self.state = 1
-        self.last_trigger = 0
+    def __init__(self, offset):
+        self.state = 0
+        self.last_trigger = 0 + offset
         self.output_freq = 48000.0
         self.output_period = (1/self.output_freq)*pow(10, 9)
         self.active = False
 
     def activate(self, gptp_time):
         """
-        Determines the output frequency of the "interim" wave and devices it by 512 to mimic the ouput module
+        Determines the output frequency of the "interim" wave and devices it by 512 to mimic the output module
         :param gptp_time:
         :return:
         """
         self.active = True
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
-        rate = 1/(difference/(1*pow(10,9))) * self.multiplier
+        rate = 1/(difference/(1*pow(10, 9))) * self.multiplier
         self.output_freq = rate/512.0
         self.output_period = 1/self.output_freq*pow(10, 9)
         # Enable this line to see changes to the output frequency in real time
-        print("{} - last_trigger={}; diff={}; rate={}; output_freq={}".format(gptp_time, gptp_time-difference, difference, rate, self.output_freq))
+        print("{} - last_trigger={}; diff={}; rate={}; output_freq={}".format(gptp_time, gptp_time-difference,
+                                                                              difference, rate, self.output_freq))
 
     def check(self, gptp_time, localfifo):
         """
@@ -213,32 +215,29 @@ class CLKDIV:
         global genmclk, genmclk_y
 
         if self.active:
-            if gptp_time < 2000000:
-                comp_val = gptp_time-self.last_trigger
-            else:
-                comp_val = gptp_time-self.last_trigger-1
-
+            comp_val = gptp_time - (self.last_trigger + 1)
             if int(comp_val % (self.output_period/2)) == 0:
                 self.state = not self.state
                 genmclk.append(gptp_time)
                 genmclk_y.append(self.state*0.95)  # multiply by 0.5 to distinguish on graph
                 if self.state == 1:
-                    print("{} - ".format(gptp_time))
+                    print("{}; mclk out".format(gptp_time))
                     localfifo.put(gptp_time)
 
 
 def plots():
     global srcmclk, srcmclk_y, genmclk, genmclk_y, simtime
-    plt.plot(srcmclk, srcmclk_y, color='blue', drawstyle='steps-post', linewidth=0.25)
-    plt.plot(genmclk, genmclk_y, color='red', drawstyle='steps-post', linewidth=0.25)
-    plt.title("Waveform")
+    scale = int(len(srcmclk) / 1)
+    plt.plot(srcmclk[:scale], srcmclk_y[:scale], color='blue', drawstyle='steps-post', linewidth=0.25)
+    plt.plot(genmclk[:int(scale)], genmclk_y[:int(scale)], color='red', drawstyle='steps-post', linewidth=0.25)
+    plt.title("Waveform-{}".format(simtime))
     plt.ylabel('Amplitude')
     plt.xlabel("Time")
-    plt.xticks(srcmclk[::4], srcmclk[::4], rotation='vertical')
+    plt.xticks(srcmclk[:scale:6], srcmclk[:scale:6], rotation='vertical')
     plt.yticks([0, 1], [0, 1])
     ax = plt.gca()
     ax.grid(True)
-    ax.set_aspect(1.0 / ax.get_data_ratio() * 0.95)
+    ax.set_aspect(1.0 / ax.get_data_ratio() * 0.15)
     plt.savefig("dataout/{}-waveform.png".format(simtime), dpi=2400)
 
 
@@ -250,7 +249,8 @@ if __name__ == '__main__':
     logfile = open("dataout/{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
     logfile.write("gptp_time, range, local_timestamp, rx_timestamp, difference\n")
     sim = GPTPGenerator()
-    sim.run(int(28333*180))
+    sim.run(int(28333*1600))
+    # sim.run(3030000)
     logfile.close()
     # sim.save_localfifo()
-    plots()
+    # plots()
