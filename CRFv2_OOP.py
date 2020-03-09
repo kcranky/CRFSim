@@ -11,7 +11,8 @@ TODO:
     - implement different clock rates for the CS2000 vs full level simulation
         - i.e. have modules run at different clock rates as opposed to hardcoded values?
     - See if we can move away from global variables?
-    - Implement the source clock seperately as opposed to generating values on the fly as is currently done
+    - Implement the source clock separately as opposed to generating values on the fly as is currently done
+    - Remove gen mclk buffer and just store the latest generated mclk value
 """
 
 from queue import Queue
@@ -90,7 +91,7 @@ class CSGen:
     """
     def __init__(self, offset=0):
         self.state = 1
-        self.count_to = 500000  # the value the CSGen must count to
+        self.count_to = 12500  # the value the CSGen must count to
         self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
         self.local_count_scale = 1  # TODO: How many times slower is the CS2000 driver module than the gPTP module?
@@ -119,7 +120,7 @@ class CSGen:
 
         # this will control the o/c wave
         # print(self.count_to, self.local_count)
-        if int(self.local_count) == int(self.count_to):
+        if int(self.local_count) == int(self.count_to*40):
             # print("{} - reached count_to".format(gptp_time))
             self.local_count = 0
             # if it's a rising edge, we need to call the clk_div
@@ -253,4 +254,4 @@ if __name__ == '__main__':
     # sim.run(3030000)
     logfile.close()
     # sim.save_localfifo()
-    # plots()
+    plots()

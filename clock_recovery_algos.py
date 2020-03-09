@@ -41,6 +41,7 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
 
     if -threshold_a <= difference <= threshold_a:
         state = State.DIFF_MATCH
+        clock_shift = 0
         if prev_state != state:
             logfile.write(
                 "{}, [-A..A], {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
@@ -48,9 +49,10 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     elif threshold_a < difference <= threshold_b:
         state = State.DIFF_GT
         if prev_state != state:
+            # TODO: slow down local clock by increasing count_to proportionally to the difference
+            clock_shift = 1
             logfile.write(
                 "{}, (A..B], {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
-        # TODO: slow down local clock by increasing count_to proportionally to the difference
 
     elif difference > threshold_b:
         state = State.DIFF_MGT
@@ -61,9 +63,10 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     elif -threshold_b <= difference < -threshold_a:
         state = State.DIFF_LT
         if prev_state != state:
+            # do a correction to speed up local clock by making count_to smaller
+            clock_shift = -1
             logfile.write(
                 "{}, [-B..-A), {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
-        # do a correction to speed up local clock by making count_to smaller
 
     elif difference < -threshold_b:
         state = State.DIFF_MLT
