@@ -39,15 +39,15 @@ class GPTPGenerator:
     def run(self, duration_nanoseconds):
         global logfile
         sourcecmclk = SourceMClk()
-        csgen = CSGen(offset=0)
+        csgen = CSGen(offset=2500)
         # Run the simulation
         for i in range(duration_nanoseconds+1):
             # Call all relevant functions
             sourcecmclk.trigger(i, self.txfifo)  # see if we need to generate a mediaclock this nS
             csgen.ocw_control(i, self.localfifo)
             csgen.compare(i, self.txfifo, self.localfifo)
-        logfile.write("{}, {}\n".format(self.txfifo.qsize(), self.localfifo.qsize()))
-        logfile.write("{}, Finished sim\n".format(i))
+        logfile.write("{}; {}\n".format(self.txfifo.qsize(), self.localfifo.qsize()))
+        logfile.write("{}; Finished sim\n".format(i))
 
     def save_localfifo(self):
         outfile = open("dataout/{}-CRFv2_OOP_LocalFifo.csv".format(simtime), "w+")
@@ -119,13 +119,14 @@ class CSGen:
                 return
 
         # this will control the o/c wave
-        # print(self.count_to, self.local_count)
-        if int(self.local_count) == int(self.count_to*40):
-            # print("{} - reached count_to".format(gptp_time))
+        if int(self.local_count) == int(self.count_to*40):  # 40 is the amount of nS in one 25MHz Period
             self.local_count = 0
+
             # if it's a rising edge, we need to call the clk_div
             self.state = not self.state
             if self.state == 1:
+                # reset the NCO back to 48kHz
+                self.count_to = 12500
                 self.clkdiv.activate(gptp_time)
 
         # we need to check the gptp output every ns, so
@@ -155,8 +156,12 @@ class CSGen:
             return
 
         # Algorithm 1
-        shift, self.recovery_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
+        shift, rec_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
         # print(shift, recovery_state)
+
+        if self.recovery_state != rec_state:
+            self.adjust_count_to(shift)
+            self.recovery_state = rec_state
 
         if self.recovery_state in [cra.State.DIFF_MATCH, cra.State.DIFF_LT,  cra.State.DIFF_GT]:
             if txfifo.qsize() != 0:
@@ -174,6 +179,8 @@ class CSGen:
 
     def adjust_count_to(self, shift_value):
         self.count_to = self.count_to + shift_value
+        print("Shifted by; {}".format(shift_value))
+        print("New count_to; {}".format(self.count_to))
 
 
 class CLKDIV:
@@ -222,7 +229,7 @@ class CLKDIV:
                 genmclk.append(gptp_time)
                 genmclk_y.append(self.state*0.95)  # multiply by 0.5 to distinguish on graph
                 if self.state == 1:
-                    print("{}; mclk out".format(gptp_time))
+                    # print("{}; mclk out".format(gptp_time))
                     localfifo.put(gptp_time)
 
 
@@ -254,4 +261,4 @@ if __name__ == '__main__':
     # sim.run(3030000)
     logfile.close()
     # sim.save_localfifo()
-    plots()
+    # plots()

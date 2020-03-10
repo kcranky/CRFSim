@@ -41,10 +41,10 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
 
     if -threshold_a <= difference <= threshold_a:
         state = State.DIFF_MATCH
-        clock_shift = 0
         if prev_state != state:
+            clock_shift = 0
             logfile.write(
-                "{}, [-A..A], {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}; [-A..A]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif threshold_a < difference <= threshold_b:
         state = State.DIFF_GT
@@ -52,13 +52,13 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
             # TODO: slow down local clock by increasing count_to proportionally to the difference
             clock_shift = 1
             logfile.write(
-                "{}, (A..B], {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}; (A..B]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif difference > threshold_b:
         state = State.DIFF_MGT
         if prev_state != state:
             logfile.write(
-                "{}, (B..inf], {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}; (B..inf]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif -threshold_b <= difference < -threshold_a:
         state = State.DIFF_LT
@@ -66,19 +66,19 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
             # do a correction to speed up local clock by making count_to smaller
             clock_shift = -1
             logfile.write(
-                "{}, [-B..-A), {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}; [-B..-A); {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif difference < -threshold_b:
         state = State.DIFF_MLT
         if prev_state != state:
             logfile.write(
-                "{}, [-inf..-B), {} , {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}; [-inf..-B); {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     else:
         state = State.DIFF_ERROR
         if prev_state != state:
             logfile.write("Donkey\n")
-            logfile.write("{}, {}-{}={}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+            logfile.write("{}; {}-{}={}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     return clock_shift, state
 
