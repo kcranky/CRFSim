@@ -120,6 +120,7 @@ class CSGen:
 
         # this will control the o/c wave
         if int(self.local_count) == int(self.count_to*40):  # 40 is the amount of nS in one 25MHz Period
+            print("Reached; {}".format(self.count_to))
             self.local_count = 0
 
             # if it's a rising edge, we need to call the clk_div
@@ -178,9 +179,11 @@ class CSGen:
             pass
 
     def adjust_count_to(self, shift_value):
+        # TODO: Because this is being adjusted by 160 increments
+        #    We should likely have self.count_to = 12500 + shift_value
         self.count_to = self.count_to + shift_value
-        print("Shifted by; {}".format(shift_value))
-        print("New count_to; {}".format(self.count_to))
+        # self.count_to = 12500 + shift_value
+        print("Shifted by; {}; new; {}".format(shift_value, self.count_to))
 
 
 class CLKDIV:
@@ -229,7 +232,7 @@ class CLKDIV:
                 genmclk.append(gptp_time)
                 genmclk_y.append(self.state*0.95)  # multiply by 0.5 to distinguish on graph
                 if self.state == 1:
-                    # print("{}; mclk out".format(gptp_time))
+                    print("{}; mclk out".format(gptp_time))
                     localfifo.put(gptp_time)
 
 
@@ -257,7 +260,7 @@ if __name__ == '__main__':
     logfile = open("dataout/{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
     logfile.write("gptp_time, range, local_timestamp, rx_timestamp, difference\n")
     sim = GPTPGenerator()
-    sim.run(int(28333*1600))
+    sim.run(int(28333*1600*5))
     # sim.run(3030000)
     logfile.close()
     # sim.save_localfifo()

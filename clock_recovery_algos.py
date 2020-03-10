@@ -42,7 +42,6 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     if -threshold_a <= difference <= threshold_a:
         state = State.DIFF_MATCH
         if prev_state != state:
-            clock_shift = 0
             logfile.write(
                 "{}; [-A..A]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
@@ -50,7 +49,7 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
         state = State.DIFF_GT
         if prev_state != state:
             # TODO: slow down local clock by increasing count_to proportionally to the difference
-            clock_shift = 1
+            clock_shift = int(abs(difference / 213) / 40)
             logfile.write(
                 "{}; (A..B]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
@@ -64,7 +63,9 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
         state = State.DIFF_LT
         if prev_state != state:
             # do a correction to speed up local clock by making count_to smaller
-            clock_shift = -1
+            # 3.33 * 160 = ~213
+            # We then further device by 40 to cater to convert nS to count
+            clock_shift = int(abs(difference/213)/40)*-1
             logfile.write(
                 "{}; [-B..-A); {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
