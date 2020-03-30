@@ -157,11 +157,14 @@ class CSGen:
             return
 
         # Algorithm 1
-        shift, rec_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
-        # print(shift, recovery_state)
+        # shift, rec_state = cra.rev1(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
+
+        # Algorithm 2
+        shift, rec_state = cra.rev2(gptp_time, self.local_timestamp, self.rx_timestamp, logfile, self.recovery_state)
 
         if self.recovery_state != rec_state:
-            self.adjust_count_to(shift)
+            if shift is not None:
+                self.adjust_count_to(shift)
             self.recovery_state = rec_state
 
         if self.recovery_state in [cra.State.DIFF_MATCH, cra.State.DIFF_LT,  cra.State.DIFF_GT]:
@@ -263,5 +266,5 @@ if __name__ == '__main__':
     sim.run(int(28333*1600*5))
     # sim.run(3030000)
     logfile.close()
-    # sim.save_localfifo()
+    sim.save_localfifo()
     # plots()

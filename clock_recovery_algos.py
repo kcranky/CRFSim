@@ -43,7 +43,7 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
         state = State.DIFF_MATCH
         if prev_state != state:
             logfile.write(
-                "{}; [-A..A]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}, [-A..A], {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif threshold_a < difference <= threshold_b:
         state = State.DIFF_GT
@@ -51,13 +51,13 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
             # TODO: slow down local clock by increasing count_to proportionally to the difference
             clock_shift = int(abs(difference / 213) / 40)
             logfile.write(
-                "{}; (A..B]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}, (A..B], {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif difference > threshold_b:
         state = State.DIFF_MGT
         if prev_state != state:
             logfile.write(
-                "{}; (B..inf]; {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}, (B..inf], {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif -threshold_b <= difference < -threshold_a:
         state = State.DIFF_LT
@@ -67,24 +67,77 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
             # We then further device by 40 to cater to convert nS to count
             clock_shift = int(abs(difference/213)/40)*-1
             logfile.write(
-                "{}; [-B..-A); {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}, [-B..-A), {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     elif difference < -threshold_b:
         state = State.DIFF_MLT
         if prev_state != state:
             logfile.write(
-                "{}; [-inf..-B); {}; {}; {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+                "{}, [-inf..-B), {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     else:
         state = State.DIFF_ERROR
         if prev_state != state:
             logfile.write("Donkey\n")
-            logfile.write("{}; {}-{}={}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+            logfile.write("{}, {}-{}={}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
 
     return clock_shift, state
 
 
-def rev2():
-    return
+def rev2(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
+    """
+    Here we only care about a sample if it's within a "measurement window", which is smaller than 0.5T in either direction
+    We assume that samples outside of this window are of no concern to us, and we ignore them
 
+    The difference is calculated over the amount of time between sampled timestamps.
+    As we only have 160 timestamps to deal with
+    - A correction to count_to affects the outclock by 3.33nS
+    - We need to distribute corrections over 160 cycles (the time between RX timestamps)
+    - The max difference worth making is 3.33*80, as anything greater than, is greater than the comparison window
+    - The correction should thus be diff/(3.33*160)
+
+    :param gptp_time:
+    :param local_timestamp:
+    :param rx_timestamp:
+    :param logfile:
+    :return:
+    """
+    difference = rx_timestamp-local_timestamp
+    if difference == 0:
+        state = State.DIFF_MATCH
+        if state != prev_state:
+            logfile.write(
+                "{}, Exact!, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+        return 0, state
+    elif abs(difference) > 20833:
+        state = State.DIFF_ERROR
+        if state != prev_state:
+            logfile.write(
+                "{}, Out of Window, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+    elif difference <= (0.5*20833):
+        # RX > local, speed up by decreasing count_to
+        state = State.DIFF_LT
+        if state != prev_state:
+            logfile.write(
+                "{}, Speed up, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+        return int(-(difference/(3.33*160))), state
+    elif difference >= (0.5*20833):
+        # local > RX, need to slow down by increasing count_to
+        state = State.DIFF_GT
+        if state != prev_state:
+            logfile.write(
+                "{}, Slow Down!, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+        return int((difference/(3.33*160))), state
+
+    # We return none outside of comparison windows as we can;t be certain of what comparison just occurred
+    # Not technically an error, just not something we specifically process
+    state = State.DIFF_ERROR
+    if state != prev_state:
+        logfile.write(
+            "{}, Out of Window, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
+    return None, state
+
+
+def rev3(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
+    return
 # etc
