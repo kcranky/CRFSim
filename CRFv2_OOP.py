@@ -262,14 +262,15 @@ class CLKDIV:
 
 def plots():
     global srcmclk, srcmclk_y, genmclk, genmclk_y, simtime
-    start = 100
-    scale = int(len(srcmclk) / 1)
-    plt.plot(srcmclk[start:scale], srcmclk_y[start:scale], color='blue', drawstyle='steps-post', linewidth=0.25)
-    plt.plot(genmclk[:int(scale)], genmclk_y[:int(scale)], color='red', drawstyle='steps-post', linewidth=0.25)
+    offset = len(srcmclk) - len(genmclk)  # Well let us start plotting from when the waves actually are worth observing
+    duration = offset+50  # How long we want to plot for.
+
+    plt.plot(srcmclk[offset:duration], srcmclk_y[offset:duration], color='blue', drawstyle='steps-post', linewidth=0.25)
+    plt.plot(genmclk[:duration-offset], genmclk_y[:duration-offset], color='red', drawstyle='steps-post', linewidth=0.25)
     plt.title("Waveform-{}".format(simtime))
     plt.ylabel('Amplitude')
     plt.xlabel("Time")
-    plt.xticks(srcmclk[start:scale:6], srcmclk[start:scale:6], rotation='vertical')
+    plt.xticks(srcmclk[offset:duration:6], srcmclk[offset:duration:6], rotation='vertical')
     plt.yticks([0, 1], [0, 1])
     ax = plt.gca()
     ax.grid(True)
@@ -286,7 +287,7 @@ if __name__ == '__main__':
     logfile.write("gptp_time, range, local_timestamp, rx_timestamp, difference\n")
     sim = GPTPGenerator()
     # sim.run(int(28333*1600))
-    sim.run(3030000)
+    sim.run(28333*160)
     logfile.close()
     # sim.save_sourceclk(simtime)
     # sim.save_localfifo()
