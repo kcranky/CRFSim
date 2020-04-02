@@ -44,9 +44,9 @@ class GPTPGenerator:
         for i in range(duration_nanoseconds+1):
             # Call all relevant functions
             sourcecmclk.trigger(i, self.txfifo)  # see if we need to generate a mediaclock this nS
-            csgen.ocw_control(i)
-            csgen.compare(i, self.txfifo)
-        # logfile.write("{}; {}\n".format(self.txfifo.qsize(), self.localfifo.qsize()))
+            if i % 40 == 0: # Processes on the 25Mhz clock
+                csgen.ocw_control(i) # THIS IS BEING CALLED EVERY NS, BUT SHOULD BE SCALED FOR the 25MHZ clk
+                csgen.compare(i, self.txfifo)  # moved this from main loop
         logfile.write("RXFIFO, {}\n".format(self.txfifo.qsize()))
         logfile.write("{}, Finished sim\n".format(i))
 
@@ -94,8 +94,6 @@ class SourceMClk:
                     txfifo.put(gptp_time)
 
 
-
-
 class CSGen:
     """
     This class is responsible for generating the output/control wave to the CS2000 (CLKDIV)
@@ -105,20 +103,14 @@ class CSGen:
         self.count_to = 12500  # the value the CSGen must count to
         self.rate_change = 40  # 1 x 25Mhz period
         self.local_count = 0
-        self.local_count_scale = 1  # TODO: How many times slower is the CS2000 driver module than the gPTP module?
-
-        self.clkdiv = CLKDIV(offset)  # TODO: is this the best place to instantiate this?
-
         # define current timestamp values
         self.rx_timestamp = None
         self.local_ts = None
-
         self.recovery_state = None
-
         self.offset = offset
+        self.clkdiv = CLKDIV(offset)  # TODO: is this the best place to instantiate this?
 
     def ocw_control(self, gptp_time):
-        # TODO: Cater for self.local_count_scale here
         self.local_count = self.local_count + 1
 
         # Handle the initial offset
@@ -130,7 +122,7 @@ class CSGen:
                 return
 
         # this will control the o/c wave
-        if int(self.local_count) == int(self.count_to*40):  # 40 is the amount of nS in one 25MHz Period
+        if int(self.local_count) == int(self.count_to):  # 40 is the amount of nS in one 25MHz Period # TODO REMOVED *40 AS IT IS CATERED FOR IN MAIN LOOP NOW
             print("Reached, {}".format(self.count_to))
             self.local_count = 0
 
@@ -141,6 +133,7 @@ class CSGen:
                 self.count_to = 12500
                 self.clkdiv.activate(gptp_time)
 
+
         # we need to check the gptp output every ns, so
         self.local_ts = self.clkdiv.check(gptp_time)
 
@@ -149,7 +142,6 @@ class CSGen:
         Compares the received and generated timestamp
         :param gptp_time:
         :param txfifo:
-        :param localfifo:
         :return:
 
         TODO
@@ -185,17 +177,19 @@ class CSGen:
         #     pass
 
         # Algorithm 2
+        # we only call the shift recovery if we have mclks for comparison
         shift, rec_state = cra.rev2(gptp_time, self.local_ts, self.rx_timestamp, logfile, self.recovery_state)
 
         # Make sure we only shift once per state change
         if self.recovery_state != rec_state:
             if shift is not None:
+                print("{}, shifting".format(gptp_time))
                 self.adjust_count_to(shift)
             self.recovery_state = rec_state
 
         # Decide when to get the next RX timestamp
         # TODO this needs to be double checked
-        if self.local_ts > (self.rx_timestamp + (0.5*20833)):
+        if self.local_ts >= (self.rx_timestamp + (0.6*20833)):
             if txfifo.qsize() != 0:
                 self.rx_timestamp = txfifo.get()
 
@@ -223,7 +217,7 @@ class CLKDIV:
 
     def activate(self, gptp_time):
         """
-        Determines the output frequency of the "interim" wave and devices it by 512 to mimic the output module
+        Determines the output frequency of the "interim" wave and devides it by 512 to mimic the output module
         :param gptp_time:
         :return:
         """
@@ -286,8 +280,8 @@ if __name__ == '__main__':
     logfile = open("dataout/{}-CRFv2_OOP_Sim.csv".format(simtime), "w+")
     logfile.write("gptp_time, range, local_timestamp, rx_timestamp, difference\n")
     sim = GPTPGenerator()
-    # sim.run(int(28333*1600))
-    sim.run(28333*160)
+    sim.run(int(28333*1600*3))
+    # sim.run(28333*160)
     logfile.close()
     # sim.save_sourceclk(simtime)
     # sim.save_localfifo()

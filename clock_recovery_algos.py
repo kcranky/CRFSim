@@ -103,39 +103,25 @@ def rev2(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     :return:
     """
     difference = rx_timestamp-local_timestamp
-    if difference == 0:
-        state = State.DIFF_MATCH
-        if state != prev_state:
-            logfile.write(
-                "{}, Exact!, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
-        return 0, state
-    elif abs(difference) > 20833:
-        state = State.DIFF_ERROR
-        if state != prev_state:
-            logfile.write(
-                "{}, Out of Window, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
-    elif difference <= (0.5*20833):
+    if abs(difference) > 0.5*20833:
+        return None, 0
+    elif difference <= int((0.5*20833)):
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
+        correction = int(abs(difference / 213) / 40) * -1
         if state != prev_state:
-            logfile.write(
-                "{}, Speed up, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
-        return int(-(difference/(3.33*160))), state
-    elif difference >= (0.5*20833):
+            print(
+                "{}, Speed up, {}, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference, correction))
+            return correction, state
+    elif difference >= int((0.5*20833)):
         # local > RX, need to slow down by increasing count_to
+        correction = int(abs(difference / 213) / 40)
         state = State.DIFF_GT
         if state != prev_state:
-            logfile.write(
-                "{}, Slow Down!, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
-        return int((difference/(3.33*160))), state
+            print(
+                "{}, Slow Down, {}, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference, correction))
+            return correction, state
 
-    # We return none outside of comparison windows as we can;t be certain of what comparison just occurred
-    # Not technically an error, just not something we specifically process
-    state = State.DIFF_ERROR
-    if state != prev_state:
-        logfile.write(
-            "{}, Out of Window, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference))
-    return None, state
 
 
 def rev3(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):

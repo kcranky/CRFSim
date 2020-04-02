@@ -14,6 +14,6 @@ Generates a 48kHz "master" clock. May substitute this out for the generate_data 
 Implementation of the CS2000 controlling hardware and clock correction logic.   
 Implements a NCO to control the OCW to the CS2000.   
 Implements a "clock correction" section for whatever clock correction algorithm is being used.
-#### CLKDIV
+~~~~#### CLKDIV
 Implements the CS2000.  
 Reads in the OCW and determines the scaled outputs. Generates the output wave to be fed back in to CSGen for correction.
