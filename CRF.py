@@ -13,27 +13,39 @@ class GPTPSOURCE:
         self.runtime = int(0.01*pow(10, 9))  # seconds to nS
         # self.srcclk = data.sourceclock  # If it is needed
         self.genclk = []
+        # Instantiate all objects
+        self.cs2000 = CLKDIV(self.genclk, 120)
+        self.csgen = CSGEN(self.cs2000)
 
     def run(self):
         # Instantiate all objects
         # source_clock = SOURCEMCLK(self.srcclk)
-        cs2000 = CLKDIV(self.genclk, 120)
-        csgen = CSGEN(cs2000)
+
         for i in range(0, self.runtime):
             # Devices that need to run constantly
-            cs2000.generate_clock(i)
+            self.cs2000.generate_clock(i)
             # Devices that run on 25MHz
             if i % 40 == 0:
-                csgen.ocw_control(i)
-                csgen.correction_algorithm(i)
+                self.csgen.ocw_control(i)
+                self.csgen.correction_algorithm(i)
 
-    def save_srcclk(self, sim_time):
-        print(self.srcclk)
-        pass
+    def save_log_file(self, simtime, type, data):
+        f = open("dataout/{}-CRF_{}.csv".format(simtime, type), "w+")
+        for i in data:
+            f.write("{}\n".format(i))
+        f.close()
 
-    def save_genclk(self, sim_time):
-        print(self.genclk)
-        pass
+    def save_srcclk(self, simtime):
+        d = ["gptp_time, mclk value"]
+        for i in data.sourceclock:
+            d.append("{},{}".format(i[0], i[1]))
+        self.save_log_file(simtime, "srcclk", d)
+
+    def save_genclk(self, simtime):
+        d = ["gptp_time, mclk value"]
+        for i in self.cs2000.genclk:
+            d.append("{},{}".format(i[0], i[1]))
+        self.save_log_file(simtime, "genclk", d)
 
 
 class CSGEN:
@@ -79,7 +91,6 @@ class CSGEN:
         srcclk_ts = self.timestamps[self.srcclk_index]
         genclk_ts = self.clock_div_module.latest_ts
 
-
         # call the correction algorithm
         shift, rec_state = cra.rev2(gptp_time, genclk_ts, srcclk_ts, logfile, self.recovery_state)
 
@@ -106,6 +117,7 @@ class CLKDIV:
         self.latest_ts = 0
         self.mclk_state = 0
         self.genclk = genclk
+        self.ocw_log = ["gptp_time, last_trigger, diff, rate, output_freq"]
 
     def trigger_cs2000(self, gptp_time):
         """
@@ -121,8 +133,7 @@ class CLKDIV:
         rate = 1 / (difference / (1 * pow(10, 9))) * self.multiplier
         self.output_freq = rate / 512.0
         self.output_period = 1 / self.output_freq * pow(10, 9)
-        print("{}, last_trigger={}, diff={}, rate={}, output_freq={}".format(gptp_time, gptp_time - difference,
-                                                                            difference, rate, self.output_freq))
+        self.ocw_log.append("{}, {}, {}, {}, {}".format(gptp_time, gptp_time - difference, difference, rate, self.output_freq))
 
     def generate_clock(self, gptp_time):
         comp_val = gptp_time - self.last_trigger
@@ -130,7 +141,6 @@ class CLKDIV:
             self.mclk_state = not self.mclk_state
             self.genclk.append([gptp_time, self.mclk_state * 0.95])  # multiply by 0.95 to distinguish on graph
             if self.mclk_state == 1:
-                print("{}, mclk out".format(gptp_time))
                 self.latest_ts = gptp_time
 
 
@@ -142,5 +152,4 @@ if __name__ == "__main__":
     logfile = open("dataout/{}-CRF_Sim.csv".format(sim_time), "w+")
     sim = GPTPSOURCE()
     sim.run()
-    # sim.save_genclk(sim_time)
     logfile.close()
