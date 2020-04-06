@@ -84,7 +84,7 @@ def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     return clock_shift, state
 
 
-def rev2(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
+def rev2(gptp_time, local_timestamp, rx_timestamp, log, prev_state):
     """
     Here we only care about a sample if it's within a "measurement window", which is smaller than 0.5T in either direction
     We assume that samples outside of this window are of no concern to us, and we ignore them
@@ -105,23 +105,27 @@ def rev2(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     difference = rx_timestamp-local_timestamp
     if abs(difference) > 0.5*20833:
         return None, 0
+    if difference == 0:
+        return None, 0
     elif difference <= int((0.5*20833)):
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
         correction = int(abs(difference / 213) / 40) * -1
-        if state != prev_state:
-            print(
-                "{}, Speed up, {}, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference, correction))
-            return correction, state
     elif difference >= int((0.5*20833)):
         # local > RX, need to slow down by increasing count_to
         correction = int(abs(difference / 213) / 40)
         state = State.DIFF_GT
-        if state != prev_state:
-            print(
-                "{}, Slow Down, {}, {}, {}, {}\n".format(gptp_time, local_timestamp, rx_timestamp, difference, correction))
-            return correction, state
 
+    if state != prev_state:
+        try:
+            log[gptp_time]
+        except KeyError:
+            log[gptp_time] = {}
+        log[gptp_time]["src_ts"] = rx_timestamp
+        log[gptp_time]["gen_ts"] = local_timestamp
+        log[gptp_time]["delta"] = difference
+        log[gptp_time]["result"] = correction
+        return correction, state
 
 
 def rev3(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):

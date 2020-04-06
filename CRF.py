@@ -1,11 +1,27 @@
 """
 Attempt 3
 Let's go
+
+Things that may need to be logged:
+    - Current gptp time (primary key
+    - src_ts - source timestamp used for comparison
+    - gen_ts = generated timestamp used for comparison
+    - count_to - count to value in the NCO
+    - last_trigger - last trigger of the CS2000
+    - cs2000difference - difference between current gptp value and last trigger
+    - delta - the difference between TS in the recovery algorithm
+    - result - the result of the correction algorithm. Negative means an increase in speed
+    - shifting - the amount the NCO is being shifted by. Should match "result"
+
+
+
+
 """
 import clock_recovery_algos as cra
 import data
 from datetime import datetime
 import os
+import csv
 
 
 class GPTPSOURCE:
@@ -13,9 +29,14 @@ class GPTPSOURCE:
         self.runtime = int(0.01*pow(10, 9))  # seconds to nS
         # self.srcclk = data.sourceclock  # If it is needed
         self.genclk = []
+        self.log = {}
         # Instantiate all objects
-        self.cs2000 = CLKDIV(self.genclk, 120)
-        self.csgen = CSGEN(self.cs2000)
+        self.cs2000 = CLKDIV(self.log, self.genclk, 120)
+        self.csgen = CSGEN(self.log, self.cs2000)
+
+    def mergedict(self, a, b):
+        a.update(b)
+        return a
 
     def run(self):
         # Instantiate all objects
@@ -28,6 +49,28 @@ class GPTPSOURCE:
             if i % 40 == 0:
                 self.csgen.ocw_control(i)
                 self.csgen.correction_algorithm(i)
+
+        # for gptp_time, item in self.log.items():
+        #     print(gptp_time)
+        #     for k in item.items():
+        #     # for attribute, value in item.items():
+        #         # print('{} : {}'.format(attribute, value))
+        #         print(k)
+
+
+        fields = ['gptp_time', "genclk_out", 'F out', 'cs2000difference']
+
+        with open("test_output.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fields)
+            # w.writeheader()
+
+            for key, val in sorted(self.log.items()):  # The keys here are gptp timestamps
+                if val in fields:
+                    row = {'gptp_time': key}
+                    row.update(val)
+                    w.writerow(row)
+            # for k, d in sorted(self.log.items()):
+            #     w.writerow(self.mergedict({'gptp_time': k}, d))
 
     def save_log_file(self, simtime, type, data):
         f = open("dataout/{}-CRF_{}.csv".format(simtime, type), "w+")
@@ -54,7 +97,7 @@ class CSGEN:
     Responsible for running the correction algorithm
     NB: These functions are only called every 40ns (25Mhz clk)
     """
-    def __init__(self, cs2000):
+    def __init__(self, log, cs2000):
         self.count_to = 12500
         self.local_count = -1  # On 0 we need it to be zero. So adding 1 will get it to 1 too soon, hence set to -1
         self.state = 1
@@ -67,6 +110,8 @@ class CSGEN:
         self.timestamps = data.timestamps
         self.srcclk_index = 0  # keeps track of which master clock we're comparing to
 
+        self.log = log
+
     def ocw_control(self, gptp_time):
         """
         Controls the OCW
@@ -78,6 +123,11 @@ class CSGEN:
         # this will control the o/c wave
         if int(self.local_count) == int(self.count_to):
             # print("{}, Reached {}".format(gptp_time, self.count_to))
+            try:
+                self.log[gptp_time]
+            except KeyError:
+                self.log[gptp_time] = {}
+            self.log[gptp_time]["count_to"] = self.count_to
             self.local_count = 0
 
             # if it's a rising edge, we need to call the clk_div
@@ -92,13 +142,18 @@ class CSGEN:
         genclk_ts = self.clock_div_module.latest_ts
 
         # call the correction algorithm
-        shift, rec_state = cra.rev2(gptp_time, genclk_ts, srcclk_ts, logfile, self.recovery_state)
+
+        shift, rec_state = cra.rev2(gptp_time, genclk_ts, srcclk_ts, self.log, self.recovery_state)
 
         # make an adjustment to count_to
         if self.recovery_state != rec_state:  # we've changed state and hence need to update!
-            print("{}, correcting, src={}, local={}".format(gptp_time, srcclk_ts, genclk_ts))
+            try:
+                self.log[gptp_time]
+            except KeyError:
+                self.log[gptp_time] = {}
+            self.log[gptp_time]["correction"] = True
             if shift is not None:
-                print("{}, shifting".format(gptp_time))
+                self.log[gptp_time]["shifting"] = shift
                 self.count_to = self.count_to + shift
                 self.srcclk_index = self.srcclk_index + 1
             self.recovery_state = rec_state
@@ -109,7 +164,7 @@ class CLKDIV:
     - Mimics CS2000
     - Implements the divider
     """
-    def __init__(self, genclk, offset):
+    def __init__(self, log, genclk, offset):
         self.multiplier = 24576  # Multiplier on the CS2000
         self.last_trigger = 0 + offset
         self.output_freq = 48000
@@ -117,7 +172,7 @@ class CLKDIV:
         self.latest_ts = 0
         self.mclk_state = 0
         self.genclk = genclk
-        self.ocw_log = ["gptp_time, last_trigger, diff, rate, output_freq"]
+        self.log = log
 
     def trigger_cs2000(self, gptp_time):
         """
@@ -133,7 +188,15 @@ class CLKDIV:
         rate = 1 / (difference / (1 * pow(10, 9))) * self.multiplier
         self.output_freq = rate / 512.0
         self.output_period = 1 / self.output_freq * pow(10, 9)
-        self.ocw_log.append("{}, {}, {}, {}, {}".format(gptp_time, gptp_time - difference, difference, rate, self.output_freq))
+
+        try:
+            self.log[gptp_time]
+        except KeyError:
+            self.log[gptp_time] = {}
+        self.log[gptp_time]["last_trigger"] = gptp_time - difference
+        self.log[gptp_time]["cs2000difference"] = difference
+        # self.log[gptp_time]["rate"] = rate
+        self.log[gptp_time]["F out"] = self.output_freq
 
     def generate_clock(self, gptp_time):
         comp_val = gptp_time - self.last_trigger
@@ -141,6 +204,11 @@ class CLKDIV:
             self.mclk_state = not self.mclk_state
             self.genclk.append([gptp_time, self.mclk_state * 0.95])  # multiply by 0.95 to distinguish on graph
             if self.mclk_state == 1:
+                try:
+                    self.log[gptp_time]
+                except KeyError:
+                    self.log[gptp_time] = {}
+                self.log[gptp_time]["genclk_out"] = True
                 self.latest_ts = gptp_time
 
 
