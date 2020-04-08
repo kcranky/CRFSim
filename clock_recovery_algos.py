@@ -13,6 +13,15 @@ where what to do is an enum (see below)
 import enum
 
 
+def append_log(log, gptp_time, items):
+    try:
+        log[gptp_time]
+    except KeyError:
+        log[gptp_time] = {}
+        for i in items:
+            log[gptp_time][i[0]] = i[1]
+
+
 class State(enum.Enum):
     DIFF_MATCH = 0
     DIFF_LT = 1
@@ -22,6 +31,7 @@ class State(enum.Enum):
     DIFF_ERROR = 5
 
 
+# TODO Update to new logging method here
 def rev1(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
     """
     The first attempt.
@@ -99,14 +109,14 @@ def rev2(gptp_time, local_timestamp, rx_timestamp, log, prev_state):
     :param gptp_time:
     :param local_timestamp:
     :param rx_timestamp:
-    :param logfile:
+    :param log:
+    :param prev_state:
     :return:
     """
     difference = rx_timestamp-local_timestamp
-    if abs(difference) > 0.5*20833:
-        return None, 0
-    if difference == 0:
-        return None, 0
+    if (abs(difference) > 0.5*20833) or difference == 0:
+        correction = 0
+        state = None
     elif difference <= int((0.5*20833)):
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
@@ -121,11 +131,11 @@ def rev2(gptp_time, local_timestamp, rx_timestamp, log, prev_state):
             log[gptp_time]
         except KeyError:
             log[gptp_time] = {}
-        log[gptp_time]["src_ts"] = rx_timestamp
-        log[gptp_time]["gen_ts"] = local_timestamp
-        log[gptp_time]["delta"] = difference
-        log[gptp_time]["result"] = correction
-        return correction, state
+        to_log = [["src_ts", rx_timestamp], ["gen_ts", local_timestamp], ["delta", difference], ["result", correction]]
+
+        append_log(log, gptp_time, to_log)
+
+    return correction, state
 
 
 def rev3(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):

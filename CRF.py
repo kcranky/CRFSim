@@ -15,6 +15,7 @@ Things that may need to be logged:
 
 """
 import clock_recovery_algos as cra
+from clock_recovery_algos import append_log as append_log
 import data
 from datetime import datetime
 import os
@@ -45,21 +46,16 @@ class GPTPSOURCE:
                 self.csgen.ocw_control(i)
                 self.csgen.correction_algorithm(i)
 
-    def mergedict(self, a, b):
-        a.update(b)
-        return a
-
     def save_log_file(self, simtime, log_fields):
         with open("dataout/CRF_{}.csv".format(simtime), "w", newline="") as f:
             w = csv.DictWriter(f, log_fields)
             w.writeheader()
             for k, d in sorted(self.log.items()):
-                #w.writerow(self.mergedict({'gptp_time': k}, d))
                 tmp = {'gptp_time': k}
                 for key in d:
                     if key in log_fields:
                         tmp.update({key: d[key]})
-                if len(tmp) > 1: # we don't want to write blank gptp events
+                if len(tmp) > 1:  # we don't want to write blank gptp events
                     w.writerow(tmp)
 
 
@@ -74,11 +70,8 @@ class CSGEN:
         self.count_to = 12500
         self.local_count = -1  # On 0 we need it to be zero. So adding 1 will get it to 1 too soon, hence set to -1
         self.state = 1
-
         self.clock_div_module = cs2000
-
         self.recovery_state = None
-
         # Timestamp data
         self.timestamps = data.timestamps
         self.srcclk_index = 0  # keeps track of which master clock we're comparing to
@@ -95,11 +88,8 @@ class CSGEN:
 
         # this will control the o/c wave
         if int(self.local_count) == int(self.count_to):
-            try:
-                self.log[gptp_time]
-            except KeyError:
-                self.log[gptp_time] = {}
-            self.log[gptp_time]["count_to"] = self.count_to
+            to_log = [["count_to", self.count_to]]
+            append_log(self.log, gptp_time, to_log)
             self.local_count = 0
 
             # if it's a rising edge, we need to call the clk_div
@@ -118,15 +108,12 @@ class CSGEN:
 
         # make an adjustment to count_to
         if self.recovery_state != rec_state:  # we've changed state and hence need to update!
-            try:
-                self.log[gptp_time]
-            except KeyError:
-                self.log[gptp_time] = {}
-            self.log[gptp_time]["correction"] = True
+            to_log = [["correction", True]]
             if shift is not None:
-                self.log[gptp_time]["shifting"] = shift
+                to_log.append(["shifting", shift])
                 self.count_to = self.count_to + shift
                 self.srcclk_index = self.srcclk_index + 1
+            append_log(self.log, gptp_time, to_log)
             self.recovery_state = rec_state
 
 
@@ -160,15 +147,9 @@ class CLKDIV:
         rate = 1 / (difference / (1 * pow(10, 9))) * self.multiplier
         self.output_freq = rate / 512.0
         self.output_period = 1 / self.output_freq * pow(10, 9)
-
-        try:
-            self.log[gptp_time]
-        except KeyError:
-            self.log[gptp_time] = {}
-        self.log[gptp_time]["last_trigger"] = gptp_time - difference
-        self.log[gptp_time]["cs2000difference"] = difference
-        # self.log[gptp_time]["rate"] = rate
-        self.log[gptp_time]["F out"] = self.output_freq
+        to_log = [["last_trigger", gptp_time - difference], ["cs2000difference", difference], ["rate", rate],
+                  ["F out", self.output_freq]]
+        append_log(self.log, gptp_time, to_log)
 
     def generate_clock(self, gptp_time):
         comp_val = gptp_time - self.last_trigger
@@ -176,11 +157,7 @@ class CLKDIV:
             self.mclk_state = not self.mclk_state
             self.genclk.append([gptp_time, self.mclk_state * 0.95])  # multiply by 0.95 to distinguish on graph
             if self.mclk_state == 1:
-                try:
-                    self.log[gptp_time]
-                except KeyError:
-                    self.log[gptp_time] = {}
-                self.log[gptp_time]["genclk_out"] = True
+                append_log(self.log, gptp_time, [["genclk_out", True]])
                 self.latest_ts = gptp_time
 
 
@@ -191,5 +168,7 @@ if __name__ == "__main__":
     sim_time = now.strftime("%Y-%m-%d-%H%M%S")
     sim = GPTPSOURCE()
     sim.run()
-    fields = ['gptp_time', 'gen_ts', "F out"]
+    fields = sim.all_fields.copy()
+    print(fields)
+    fields.remove('genclk_out')
     sim.save_log_file(sim_time, fields)
