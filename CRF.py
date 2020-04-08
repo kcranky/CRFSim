@@ -3,7 +3,7 @@ Attempt 3
 Let's go
 
 Things that may need to be logged:
-    - Current gptp time (primary key
+    - gptp_time (primary key)
     - src_ts - source timestamp used for comparison
     - gen_ts = generated timestamp used for comparison
     - count_to - count to value in the NCO
@@ -12,9 +12,6 @@ Things that may need to be logged:
     - delta - the difference between TS in the recovery algorithm
     - result - the result of the correction algorithm. Negative means an increase in speed
     - shifting - the amount the NCO is being shifted by. Should match "result"
-
-
-
 
 """
 import clock_recovery_algos as cra
@@ -26,17 +23,15 @@ import csv
 
 class GPTPSOURCE:
     def __init__(self):
-        self.runtime = int(0.01*pow(10, 9))  # seconds to nS
+        self.runtime = int(0.005 * pow(10, 9))  # seconds to nS
         # self.srcclk = data.sourceclock  # If it is needed
         self.genclk = []
         self.log = {}
+        self.all_fields = ['gptp_time', 'correction', "genclk_out", 'F out', 'cs2000difference', 'src_ts', 'delta',
+                           'result', 'shifting', 'gen_ts', 'count_to', 'last_trigger']
         # Instantiate all objects
         self.cs2000 = CLKDIV(self.log, self.genclk, 120)
         self.csgen = CSGEN(self.log, self.cs2000)
-
-    def mergedict(self, a, b):
-        a.update(b)
-        return a
 
     def run(self):
         # Instantiate all objects
@@ -50,45 +45,22 @@ class GPTPSOURCE:
                 self.csgen.ocw_control(i)
                 self.csgen.correction_algorithm(i)
 
-        # for gptp_time, item in self.log.items():
-        #     print(gptp_time)
-        #     for k in item.items():
-        #     # for attribute, value in item.items():
-        #         # print('{} : {}'.format(attribute, value))
-        #         print(k)
+    def mergedict(self, a, b):
+        a.update(b)
+        return a
 
-
-        fields = ['gptp_time', "genclk_out", 'F out', 'cs2000difference']
-
-        with open("test_output.csv", "w", newline="") as f:
-            w = csv.DictWriter(f, fields)
-            # w.writeheader()
-
-            for key, val in sorted(self.log.items()):  # The keys here are gptp timestamps
-                if val in fields:
-                    row = {'gptp_time': key}
-                    row.update(val)
-                    w.writerow(row)
-            # for k, d in sorted(self.log.items()):
-            #     w.writerow(self.mergedict({'gptp_time': k}, d))
-
-    def save_log_file(self, simtime, type, data):
-        f = open("dataout/{}-CRF_{}.csv".format(simtime, type), "w+")
-        for i in data:
-            f.write("{}\n".format(i))
-        f.close()
-
-    def save_srcclk(self, simtime):
-        d = ["gptp_time, mclk value"]
-        for i in data.sourceclock:
-            d.append("{},{}".format(i[0], i[1]))
-        self.save_log_file(simtime, "srcclk", d)
-
-    def save_genclk(self, simtime):
-        d = ["gptp_time, mclk value"]
-        for i in self.cs2000.genclk:
-            d.append("{},{}".format(i[0], i[1]))
-        self.save_log_file(simtime, "genclk", d)
+    def save_log_file(self, simtime, log_fields):
+        with open("dataout/CRF_{}.csv".format(simtime), "w", newline="") as f:
+            w = csv.DictWriter(f, log_fields)
+            w.writeheader()
+            for k, d in sorted(self.log.items()):
+                #w.writerow(self.mergedict({'gptp_time': k}, d))
+                tmp = {'gptp_time': k}
+                for key in d:
+                    if key in log_fields:
+                        tmp.update({key: d[key]})
+                if len(tmp) > 1: # we don't want to write blank gptp events
+                    w.writerow(tmp)
 
 
 class CSGEN:
@@ -97,6 +69,7 @@ class CSGEN:
     Responsible for running the correction algorithm
     NB: These functions are only called every 40ns (25Mhz clk)
     """
+
     def __init__(self, log, cs2000):
         self.count_to = 12500
         self.local_count = -1  # On 0 we need it to be zero. So adding 1 will get it to 1 too soon, hence set to -1
@@ -122,7 +95,6 @@ class CSGEN:
 
         # this will control the o/c wave
         if int(self.local_count) == int(self.count_to):
-            # print("{}, Reached {}".format(gptp_time, self.count_to))
             try:
                 self.log[gptp_time]
             except KeyError:
@@ -142,7 +114,6 @@ class CSGEN:
         genclk_ts = self.clock_div_module.latest_ts
 
         # call the correction algorithm
-
         shift, rec_state = cra.rev2(gptp_time, genclk_ts, srcclk_ts, self.log, self.recovery_state)
 
         # make an adjustment to count_to
@@ -164,6 +135,7 @@ class CLKDIV:
     - Mimics CS2000
     - Implements the divider
     """
+
     def __init__(self, log, genclk, offset):
         self.multiplier = 24576  # Multiplier on the CS2000
         self.last_trigger = 0 + offset
@@ -217,7 +189,7 @@ if __name__ == "__main__":
         os.makedirs("dataout")
     now = datetime.now()
     sim_time = now.strftime("%Y-%m-%d-%H%M%S")
-    logfile = open("dataout/{}-CRF_Sim.csv".format(sim_time), "w+")
     sim = GPTPSOURCE()
     sim.run()
-    logfile.close()
+    fields = ['gptp_time', 'gen_ts', "F out"]
+    sim.save_log_file(sim_time, fields)
