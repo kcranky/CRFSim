@@ -23,15 +23,22 @@ import csv
 
 
 class GPTPSOURCE:
-    def __init__(self):
-        self.runtime = int(0.005 * pow(10, 9))  # seconds to nS
+    def __init__(self, offset):
+        self.runtime = int(0.3 * pow(10, 9))  # seconds to nS
         # self.srcclk = data.sourceclock  # If it is needed
         self.genclk = []
         self.log = {}
-        self.all_fields = ['gptp_time', 'correction', "genclk_out", 'F out', 'cs2000difference', 'src_ts', 'delta',
-                           'result', 'shifting', 'gen_ts', 'count_to', 'last_trigger']
+        self.all_fields = [
+            # primary gptp time, flag for generated mclk
+            'gptp_time', 'genclk_out',
+            # Algorithm correction details
+            'count_to', 'last_trigger',  'F out', 'cs2000difference', 'src_ts', 'gen_ts', 'delta',
+            # Details from the shifting method
+            'correction', 'shifting',
+            'result',  'state']
+
         # Instantiate all objects
-        self.cs2000 = CLKDIV(self.log, self.genclk, 120)
+        self.cs2000 = CLKDIV(self.log, self.genclk, offset)
         self.csgen = CSGEN(self.log, self.cs2000)
 
     def run(self):
@@ -75,7 +82,6 @@ class CSGEN:
         # Timestamp data
         self.timestamps = data.timestamps
         self.srcclk_index = 0  # keeps track of which master clock we're comparing to
-
         self.log = log
 
     def ocw_control(self, gptp_time):
@@ -104,16 +110,18 @@ class CSGEN:
         genclk_ts = self.clock_div_module.latest_ts
 
         # call the correction algorithm
-        shift, rec_state = cra.rev2(gptp_time, genclk_ts, srcclk_ts, self.log, self.recovery_state)
+        shift, rec_state, tlog = cra.rev1(genclk_ts, srcclk_ts, self.recovery_state)
+        # append_log(self.log, gptp_time, tlog)
 
         # make an adjustment to count_to
         if self.recovery_state != rec_state:  # we've changed state and hence need to update!
-            to_log = [["correction", True]]
+            tlog.append(["correction", True])
             if shift is not None:
-                to_log.append(["shifting", shift])
+                tlog.append(["shifting", shift])
                 self.count_to = self.count_to + shift
                 self.srcclk_index = self.srcclk_index + 1
-            append_log(self.log, gptp_time, to_log)
+            print(tlog)
+            append_log(self.log, gptp_time, tlog)
             self.recovery_state = rec_state
 
 
@@ -147,7 +155,8 @@ class CLKDIV:
         rate = 1 / (difference / (1 * pow(10, 9))) * self.multiplier
         self.output_freq = rate / 512.0
         self.output_period = 1 / self.output_freq * pow(10, 9)
-        to_log = [["last_trigger", gptp_time - difference], ["cs2000difference", difference], ["rate", rate],
+        lst_trig = gptp_time - difference
+        to_log = [["last_trigger", lst_trig], ["cs2000difference", difference], ["rate", rate],
                   ["F out", self.output_freq]]
         append_log(self.log, gptp_time, to_log)
 
@@ -162,13 +171,23 @@ class CLKDIV:
 
 
 if __name__ == "__main__":
+    sim = GPTPSOURCE(2000)
+    print("Starting Simulation")
+    try:
+        sim.run()
+    except KeyboardInterrupt:
+        print("Keyboard interrupt. Saving logfile.")
+    else:
+        print("Simulation complete. Saving logfile.")
+
+    # Save the logfile
     if not os.path.exists("dataout"):
         os.makedirs("dataout")
     now = datetime.now()
     sim_time = now.strftime("%Y-%m-%d-%H%M%S")
-    sim = GPTPSOURCE()
-    sim.run()
     fields = sim.all_fields.copy()
-    print(fields)
-    fields.remove('genclk_out')
+    exclude = ["genclk_out", "count_to"]
+    for f in exclude:
+        fields.remove(f)
     sim.save_log_file(sim_time, fields)
+    print("Logfile saved.")
