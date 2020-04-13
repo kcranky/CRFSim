@@ -18,8 +18,15 @@ def append_log(log, gptp_time, items):
         log[gptp_time]
     except KeyError:
         log[gptp_time] = {}
-        for i in items:
-            log[gptp_time][i[0]] = i[1]
+    for i in items:
+        log[gptp_time][i[0]] = i[1]
+
+
+def split_lists(lst, start, duration):
+    index, arr = min(enumerate(lst), key=lambda x: abs(start - x[1][0]))
+    end = index + int(duration / (20833 / 2))
+    x_lst, y_lst = zip(*lst[index:end])
+    return x_lst, y_lst
 
 
 class State(enum.Enum):

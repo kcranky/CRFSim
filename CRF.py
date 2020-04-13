@@ -20,22 +20,27 @@ import data
 from datetime import datetime
 import os
 import csv
+import matplotlib.pyplot as plot
 
 
 class GPTPSOURCE:
-    def __init__(self, offset):
-        self.runtime = int(0.3 * pow(10, 9))  # seconds to nS
+    def __init__(self, runtime, offset):
+        now = datetime.now()
+        self.simtime = now.strftime("%Y-%m-%d-%H%M%S")
+
+        self.runtime = runtime
         # self.srcclk = data.sourceclock  # If it is needed
         self.genclk = []
         self.log = {}
         self.all_fields = [
             # primary gptp time, flag for generated mclk
             'gptp_time', 'genclk_out',
+            # CS2000 control details
+            'count_to', 'last_trigger', 'cs2000difference', 'F out',
             # Algorithm correction details
-            'count_to', 'last_trigger',  'F out', 'cs2000difference', 'src_ts', 'gen_ts', 'delta',
+            'src_ts', 'gen_ts', 'delta', 'result',  'state',
             # Details from the shifting method
-            'correction', 'shifting',
-            'result',  'state']
+            'correction', 'shifting']
 
         # Instantiate all objects
         self.cs2000 = CLKDIV(self.log, self.genclk, offset)
@@ -53,8 +58,8 @@ class GPTPSOURCE:
                 self.csgen.ocw_control(i)
                 self.csgen.correction_algorithm(i)
 
-    def save_log_file(self, simtime, log_fields):
-        with open("dataout/CRF_{}.csv".format(simtime), "w", newline="") as f:
+    def save_log_file(self, log_fields):
+        with open("dataout/CRF_{}.csv".format(self.simtime), "w", newline="") as f:
             w = csv.DictWriter(f, log_fields)
             w.writeheader()
             for k, d in sorted(self.log.items()):
@@ -64,6 +69,27 @@ class GPTPSOURCE:
                         tmp.update({key: d[key]})
                 if len(tmp) > 1:  # we don't want to write blank gptp events
                     w.writerow(tmp)
+
+    def draw_plot(self, start, duration):
+        # plot source clock
+        x_src, y_src = cra.split_lists(data.sourceclock, start, duration)
+        plot.plot(x_src, y_src, color='blue', drawstyle='steps-post', linewidth=0.25)
+
+        # get the gen clock
+        x_gen, y_gen = cra.split_lists(self.genclk, start, duration)
+        plot.plot(x_gen, y_gen, color='red', drawstyle='steps-post', linewidth=0.25)
+
+        # Adjust some settings
+        plot.title("Waveform-{}".format(self.simtime))
+        plot.ylabel("Output Value")
+        plot.xlabel("Time (nS)")
+        plot.xticks(x_src[::6], x_src[::6], rotation='vertical')
+        ax = plot.gca()
+        ax.grid(True)
+        ax.set_aspect(1.0 / ax.get_data_ratio() * 0.15)
+        # Save
+        plot.savefig("dataout/Waveform_{}_start.png".format(self.simtime, start), dpi=2400)
+        return
 
 
 class CSGEN:
@@ -110,8 +136,7 @@ class CSGEN:
         genclk_ts = self.clock_div_module.latest_ts
 
         # call the correction algorithm
-        shift, rec_state, tlog = cra.rev1(genclk_ts, srcclk_ts, self.recovery_state)
-        # append_log(self.log, gptp_time, tlog)
+        shift, rec_state, tlog = cra.rev2(genclk_ts, srcclk_ts, self.recovery_state)
 
         # make an adjustment to count_to
         if self.recovery_state != rec_state:  # we've changed state and hence need to update!
@@ -120,9 +145,10 @@ class CSGEN:
                 tlog.append(["shifting", shift])
                 self.count_to = self.count_to + shift
                 self.srcclk_index = self.srcclk_index + 1
-            print(tlog)
-            append_log(self.log, gptp_time, tlog)
             self.recovery_state = rec_state
+
+        # Add details to the log
+        append_log(self.log, gptp_time, tlog)
 
 
 class CLKDIV:
@@ -171,7 +197,9 @@ class CLKDIV:
 
 
 if __name__ == "__main__":
-    sim = GPTPSOURCE(2000)
+    run_time = int(0.1 * pow(10, 9))  # seconds to nS
+    genclk_offset = 2000
+    sim = GPTPSOURCE(run_time, genclk_offset)
     print("Starting Simulation")
     try:
         sim.run()
@@ -183,11 +211,13 @@ if __name__ == "__main__":
     # Save the logfile
     if not os.path.exists("dataout"):
         os.makedirs("dataout")
-    now = datetime.now()
-    sim_time = now.strftime("%Y-%m-%d-%H%M%S")
+
     fields = sim.all_fields.copy()
-    exclude = ["genclk_out", "count_to"]
+    exclude = ["genclk_out"]
     for f in exclude:
         fields.remove(f)
-    sim.save_log_file(sim_time, fields)
+    sim.save_log_file(fields)
     print("Logfile saved.")
+    print("Exporting graph.")
+    sim.draw_plot(5000000, 20833*200)
+    print("Graph saved.")
