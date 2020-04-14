@@ -29,7 +29,6 @@ class GPTPSOURCE:
         self.simtime = now.strftime("%Y-%m-%d-%H%M%S")
 
         self.runtime = runtime
-        # self.srcclk = data.sourceclock  # If it is needed
         self.genclk = []
         self.log = {}
         self.all_fields = [
@@ -88,7 +87,8 @@ class GPTPSOURCE:
         ax.grid(True)
         ax.set_aspect(1.0 / ax.get_data_ratio() * 0.15)
         # Save
-        plot.savefig("dataout/Waveform_{}_start.png".format(self.simtime, start), dpi=2400)
+        plot.savefig("dataout/Waveform_{}-{}-{}.png".format(self.simtime, start, duration), dpi=2400)
+        plot.close()
         return
 
 
@@ -127,7 +127,7 @@ class CSGEN:
             # if it's a rising edge, we need to call the clk_div
             self.state = not self.state
             if self.state == 1:
-                self.count_to = 12500  # reset the NCO back to 48kHz
+                # self.count_to = 12500  # reset the NCO back to 48kHz
                 self.clock_div_module.trigger_cs2000(gptp_time)
 
     def correction_algorithm(self, gptp_time):
@@ -178,7 +178,9 @@ class CLKDIV:
         """
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
-        rate = 1 / (difference / (1 * pow(10, 9))) * self.multiplier
+
+        # For some reason, when this algorithm is called, we don't get the genclk called correctly
+        rate = 1 / (difference / (1*pow(10, 9))) * self.multiplier
         self.output_freq = rate / 512.0
         self.output_period = 1 / self.output_freq * pow(10, 9)
         lst_trig = gptp_time - difference
@@ -187,18 +189,21 @@ class CLKDIV:
         append_log(self.log, gptp_time, to_log)
 
     def generate_clock(self, gptp_time):
-        comp_val = gptp_time - self.last_trigger
-        if int(comp_val % (self.output_period / 2)) == 0:
+        comp_val = gptp_time - self.latest_ts  # TODO When is the right time to genclk? SWITCHED TO TRIGGER
+        if int(comp_val % int(self.output_period / 2)) == 0:
             self.mclk_state = not self.mclk_state
             self.genclk.append([gptp_time, self.mclk_state * 0.95])  # multiply by 0.95 to distinguish on graph
             if self.mclk_state == 1:
                 append_log(self.log, gptp_time, [["genclk_out", True]])
                 self.latest_ts = gptp_time
+        if gptp_time == 1000000:
+            print("Comparison issue")
+            print(comp_val, self.mclk_state)
 
 
 if __name__ == "__main__":
     run_time = int(0.1 * pow(10, 9))  # seconds to nS
-    genclk_offset = 2000
+    genclk_offset = 5000
     sim = GPTPSOURCE(run_time, genclk_offset)
     print("Starting Simulation")
     try:
@@ -213,11 +218,13 @@ if __name__ == "__main__":
         os.makedirs("dataout")
 
     fields = sim.all_fields.copy()
-    exclude = ["genclk_out"]
-    for f in exclude:
-        fields.remove(f)
+    # exclude = ["genclk_out"]
+    # for f in exclude:
+    #     fields.remove(f)
     sim.save_log_file(fields)
     print("Logfile saved.")
     print("Exporting graph.")
-    sim.draw_plot(5000000, 20833*200)
+    # sim.draw_plot(7500000, 20833*200)
+    sim.draw_plot(0, 20833 * 200)
+    sim.draw_plot(1500000, 20833*200)
     print("Graph saved.")

@@ -112,24 +112,26 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     :return:
     """
     to_log = []
-    difference = 0
     state = None
     difference = rx_timestamp-local_timestamp
+    threshA = 1041  # 5% of 20833. Ignored in this cause we're just gonna try correct anyway
+    # Thresh B is about half the mclk cycle. We have 48khz = 20833 nS, or 10416.6667
+    thresh = 10416  # We choose this, as the balance will be found on the "other end"
 
     if difference == 0:
         correction = 0
         state = State.DIFF_MATCH
-    elif difference <= int((0.5*20833)):
+    elif abs(difference) > 20833:
+        correction = 0
+        state = "outofbounds"
+    elif difference < 0:
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
         correction = int(abs(difference / 213) / 40) * -1
-    elif difference >= int((0.5*20833)) and (difference <= 20833):
+    elif difference >= 0:
         # local > RX, need to slow down by increasing count_to
         correction = int(abs(difference / 213) / 40)
         state = State.DIFF_GT
-    elif abs(difference) > 0.5*20833:
-        correction = 0
-        state = "outofbounds"
 
     if state != prev_state:
         to_log = [["src_ts", rx_timestamp], ["gen_ts", local_timestamp], ["delta", difference], ["result", correction],
