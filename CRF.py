@@ -26,7 +26,7 @@ import matplotlib.pyplot as plot
 class GPTPSOURCE:
     def __init__(self, runtime, offset):
         now = datetime.now()
-        self.simtime = now.strftime("%Y-%m-%d-%H%M%S")
+        self.simtime = now.strftime("%Y-%m-%d-%H-%M-%S")
 
         self.runtime = runtime
         self.genclk = []
@@ -48,17 +48,24 @@ class GPTPSOURCE:
     def run(self):
         # Instantiate all objects
         # source_clock = SOURCEMCLK(self.srcclk)
-
-        for i in range(0, self.runtime):
-            # Devices that need to run constantly
-            self.cs2000.generate_clock(i)
-            # Devices that run on 25MHz
-            if i % 40 == 0:
-                self.csgen.ocw_control(i)
-                self.csgen.correction_algorithm(i)
+        print("Starting Simulation")
+        try:
+            for i in range(0, self.runtime):
+                # Devices that need to run constantly
+                self.cs2000.generate_clock(i)
+                # Devices that run on 25MHz
+                if i % 40 == 0:
+                    self.csgen.ocw_control(i)
+                    self.csgen.correction_algorithm(i)
+        except KeyboardInterrupt:
+            print("Keyboard interrupt.")
+        else:
+            print("Simulation complete.")
 
     def save_log_file(self, log_fields):
-        with open("dataout/CRF_{}.csv".format(self.simtime), "w", newline="") as f:
+        print("Saving Logfile")
+        logname = "dataout/{}_CRFLog.csv".format(self.simtime)
+        with open(logname, "w", newline="") as f:
             w = csv.DictWriter(f, log_fields)
             w.writeheader()
             for k, d in sorted(self.log.items()):
@@ -68,8 +75,11 @@ class GPTPSOURCE:
                         tmp.update({key: d[key]})
                 if len(tmp) > 1:  # we don't want to write blank gptp events
                     w.writerow(tmp)
+        print("Logfile saved to {}".format(logname))
 
     def draw_plot(self, start, duration):
+        print("Drawing Plot")
+        figname = "dataout/{}_Waveform-{}-{}.png".format(self.simtime, start, (start + duration))
         # plot source clock
         x_src, y_src = cra.split_lists(data.sourceclock, start, duration)
         plot.plot(x_src, y_src, color='blue', drawstyle='steps-post', linewidth=0.25)
@@ -79,7 +89,7 @@ class GPTPSOURCE:
         plot.plot(x_gen, y_gen, color='red', drawstyle='steps-post', linewidth=0.25)
 
         # Adjust some settings
-        plot.title("Waveform-{}".format(self.simtime))
+        plot.title("{}_Waveform".format(self.simtime))
         plot.ylabel("Output Value")
         plot.xlabel("Time (nS)")
         plot.xticks(x_src[::6], x_src[::6], rotation='vertical')
@@ -87,8 +97,9 @@ class GPTPSOURCE:
         ax.grid(True)
         ax.set_aspect(1.0 / ax.get_data_ratio() * 0.15)
         # Save
-        plot.savefig("dataout/Waveform_{}-{}-{}.png".format(self.simtime, start, duration), dpi=2400)
+        plot.savefig(figname, dpi=2400)
         plot.close()
+        print("Plot saved to {}".format(figname))
         return
 
 
@@ -196,24 +207,15 @@ class CLKDIV:
             if self.mclk_state == 1:
                 append_log(self.log, gptp_time, [["genclk_out", True]])
                 self.latest_ts = gptp_time
-        if gptp_time == 1000000:
-            print("Comparison issue")
-            print(comp_val, self.mclk_state)
 
 
 if __name__ == "__main__":
     run_time = int(0.1 * pow(10, 9))  # seconds to nS
     genclk_offset = 5000
     sim = GPTPSOURCE(run_time, genclk_offset)
-    print("Starting Simulation")
-    try:
-        sim.run()
-    except KeyboardInterrupt:
-        print("Keyboard interrupt. Saving logfile.")
-    else:
-        print("Simulation complete. Saving logfile.")
+    sim.run()
 
-    # Save the logfile
+    # Make directory in case it doesn't exist
     if not os.path.exists("dataout"):
         os.makedirs("dataout")
 
@@ -222,9 +224,6 @@ if __name__ == "__main__":
     # for f in exclude:
     #     fields.remove(f)
     sim.save_log_file(fields)
-    print("Logfile saved.")
-    print("Exporting graph.")
     # sim.draw_plot(7500000, 20833*200)
     sim.draw_plot(0, 20833 * 200)
-    sim.draw_plot(1500000, 20833*200)
-    print("Graph saved.")
+    sim.draw_plot(20833 * 200, 20833*200)
