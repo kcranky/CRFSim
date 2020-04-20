@@ -124,7 +124,9 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     difference = rx_timestamp-local_timestamp
     threshA = 1041  # 5% of 20833. Ignored in this cause we're just gonna try correct anyway
     # Thresh B is about half the mclk cycle. We have 48khz = 20833 nS, or 10416.6667
-    thresh = int(20000/2)  # We choose this, as the balance will be found on the "other end"
+    thresh = int(20833/2)  # We choose this, as the balance will be found on the "other end"
+
+    correction = int(math.ceil(difference/(160/4)))
 
     if difference == 0:
         correction = 0
@@ -132,10 +134,9 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     elif (difference < 0) and (difference >= -thresh):
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
-        correction = int(math.ceil(difference/213)/40) * -1
+        correction = correction * -1
     elif (difference > 0) and (difference <= thresh):
         # local > RX, need to slow down by increasing count_to
-        correction = int(math.ceil(difference/213)/40)
         state = State.DIFF_GT
     else:
         correction = 0

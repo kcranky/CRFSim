@@ -37,7 +37,7 @@ class GPTPSOURCE:
             # primary gptp time, flag for generated mclk
             'gptp_time', 'genclk_out',
             # CS2000 control details
-            'count_to', 'last_trigger', 'cs2000difference', 'F out',
+            'count_to_high', 'count_to_low', 'last_trigger', 'cs2000difference', 'F out',
             # Algorithm correction details
             'src_ts', 'gen_ts', 'delta', 'result',  'state',
             # Details from the shifting method
@@ -153,15 +153,16 @@ class CSGEN:
 
         # this will control the o/c wave
         if int(self.local_count) == int(self.count_to):
-            to_log = [["count_to", self.count_to]]
-            append_log(self.log, gptp_time, to_log)
             self.local_count = 0
-
             # if it's a rising edge, we need to call the clk_div
             self.state = not self.state
             if self.state == 1:
-                # self.count_to = 12500  # reset the NCO back to 48kHz
+                to_log = [["count_to_high", self.count_to]]
                 self.clock_div_module.trigger_cs2000(gptp_time)
+                self.count_to = 12500
+            else:
+                to_log = [["count_to_low", self.count_to]]
+            append_log(self.log, gptp_time, to_log)
 
     def correction_algorithm(self, gptp_time):
         # determine which srcclk we're comparing to
@@ -177,6 +178,10 @@ class CSGEN:
             if shift is not None:
                 tlog.append(["shifting", shift])
                 self.count_to = self.count_to + shift
+
+                # self.count_to = 12500 + shift
+                # TODO : If we are setting to this value, we need to check for the condition that a correction
+                #   might change count_to to a value lower than current_count
                 if rec_state != "outofbounds":
                     self.srcclk_index = self.srcclk_index + 1
             self.recovery_state = rec_state
@@ -212,7 +217,6 @@ class CLKDIV:
         """
         difference = gptp_time - self.last_trigger
         self.last_trigger = gptp_time
-
         # For some reason, when this algorithm is called, we don't get the genclk called correctly
         rate = 1 / (difference / (1*pow(10, 9))) * self.multiplier
         self.output_freq = rate / 512.0
@@ -234,7 +238,7 @@ class CLKDIV:
 
 if __name__ == "__main__":
     # run_time = int(0.1 * pow(10, 9))  # seconds to nS
-    run_time = 12458200+1000
+    run_time = 8291600+(20833*202)  # seconds to nS
     genclk_offset = 5000
     sim = GPTPSOURCE(run_time, genclk_offset)
     sim.run()
@@ -244,12 +248,12 @@ if __name__ == "__main__":
         os.makedirs("dataout")
 
     fields = sim.all_fields.copy()
-    exclude = ["genclk_out", "count_to"]
+    exclude = ["genclk_out", "count_to_low"]
     for f in exclude:
         fields.remove(f)
     sim.save_log_file(fields)
 
     sim.draw_waveforms(0, 20833*200)
     sim.draw_waveforms(4125000, 20833 * 200)
-    sim.draw_waveforms(8291600, 20833 * 200)
+    # sim.draw_waveforms(8291600, 20833 * 200)
     sim.draw_phase(0, 8291600+20833*200)
