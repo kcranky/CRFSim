@@ -11,6 +11,7 @@ where what to do is an enum (see below)
 """
 
 import enum
+import math
 
 
 def append_log(log, gptp_time, items):
@@ -23,9 +24,14 @@ def append_log(log, gptp_time, items):
 
 
 def split_lists(lst, start, duration):
+
     index, arr = min(enumerate(lst), key=lambda x: abs(start - x[1][0]))
     end = index + int(duration / (20833 / 2))
-    x_lst, y_lst = zip(*lst[index:end])
+    try:
+        x_lst, y_lst = zip(*lst[index:end])
+    except ValueError:
+        print("No timestamp found. Simulation only supports up to 1s.")
+        return [], []
     return x_lst, y_lst
 
 
@@ -98,11 +104,13 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     We assume that samples outside of this window are of no concern to us, and we ignore them
 
     The difference is calculated over the amount of time between sampled timestamps.
-    As we only have 160 timestamps to deal with
+    As we only have timestamps with 160 interval to deal with
     - A correction to count_to affects the outclock by 3.33nS
-    - We need to distribute corrections over 160 cycles (the time between RX timestamps)
+    - We need to distribute corrections over 160 cycles (the time between RX timestamps) ???
     - The max difference worth making is 3.33*80, as anything greater than, is greater than the comparison window
     - The correction should thus be diff/(3.33*160)
+    - The comparison algorithm runs at 25MHz, or 40nS
+    - 160*20833/40 = 83332
 
     :param gptp_time:
     :param local_timestamp:
@@ -116,22 +124,22 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     difference = rx_timestamp-local_timestamp
     threshA = 1041  # 5% of 20833. Ignored in this cause we're just gonna try correct anyway
     # Thresh B is about half the mclk cycle. We have 48khz = 20833 nS, or 10416.6667
-    thresh = 10416  # We choose this, as the balance will be found on the "other end"
+    thresh = int(20000/2)  # We choose this, as the balance will be found on the "other end"
 
     if difference == 0:
         correction = 0
         state = State.DIFF_MATCH
-    elif abs(difference) > 20833:
-        correction = 0
-        state = "outofbounds"
-    elif difference < 0:
+    elif (difference < 0) and (difference >= -thresh):
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
-        correction = int(abs(difference / 213)) * -1
-    elif difference >= 0:
+        correction = int(math.ceil(difference/213)/40) * -1
+    elif (difference > 0) and (difference <= thresh):
         # local > RX, need to slow down by increasing count_to
-        correction = int(abs(difference / 213))
+        correction = int(math.ceil(difference/213)/40)
         state = State.DIFF_GT
+    else:
+        correction = 0
+        state = "outofbounds"
 
     if state != prev_state:
         to_log = [["src_ts", rx_timestamp], ["gen_ts", local_timestamp], ["delta", difference], ["result", correction],

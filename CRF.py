@@ -14,6 +14,8 @@ Things that may need to be logged:
     - shifting - the amount the NCO is being shifted by. Should match "result"
 
 """
+import operator
+
 import clock_recovery_algos as cra
 from clock_recovery_algos import append_log as append_log
 import data
@@ -77,8 +79,8 @@ class GPTPSOURCE:
                     w.writerow(tmp)
         print("Logfile saved to {}".format(logname))
 
-    def draw_plot(self, start, duration):
-        print("Drawing Plot")
+    def draw_waveforms(self, start, duration):
+        print("Drawing Waveforms")
         figname = "dataout/{}_Waveform-{}-{}.png".format(self.simtime, start, (start + duration))
         # plot source clock
         x_src, y_src = cra.split_lists(data.sourceclock, start, duration)
@@ -87,6 +89,8 @@ class GPTPSOURCE:
         # get the gen clock
         x_gen, y_gen = cra.split_lists(self.genclk, start, duration)
         plot.plot(x_gen, y_gen, color='red', drawstyle='steps-post', linewidth=0.25)
+
+        # TODO: Handle case for when plot goes oob of generated clock
 
         # Adjust some settings
         plot.title("{}_Waveform".format(self.simtime))
@@ -100,6 +104,24 @@ class GPTPSOURCE:
         plot.savefig(figname, dpi=2400)
         plot.close()
         print("Plot saved to {}".format(figname))
+
+        return
+
+    def draw_phase(self, start, duration):
+        # TODO This isn't an accurate method for plotting phase difference, because they run at different rates
+        # Draw the phase diff plot
+        x_src, y_src = cra.split_lists(data.sourceclock, start, duration)
+        x_gen, y_gen = cra.split_lists(self.genclk, start, duration)
+        phase_diff = [((x1 - x2) % 20833) for (x1, x2) in zip(x_src, x_gen)]
+        print(len(x_src), len(x_gen), len(phase_diff))
+        # print(phase_diff)
+
+        plot.plot(x_src[0:len(phase_diff)], phase_diff, linewidth=0.25)
+
+        plot.xticks(x_src[::6], x_src[::6], rotation='vertical')
+        # Save
+        plot.savefig("dataout/{}_PhaseDiff.png".format(self.simtime), dpi=2400)
+        plot.close()
         return
 
 
@@ -171,10 +193,10 @@ class CLKDIV:
 
     def __init__(self, log, genclk, offset):
         self.multiplier = 24576  # Multiplier on the CS2000
-        self.last_trigger = 0 + offset
+        self.last_trigger = 0
         self.output_freq = 48000
         self.output_period = 1 / self.output_freq * pow(10, 9)
-        self.latest_ts = 0
+        self.latest_ts = 0 + offset
         self.mclk_state = 0
         self.genclk = genclk
         self.log = log
@@ -201,7 +223,7 @@ class CLKDIV:
         append_log(self.log, gptp_time, to_log)
 
     def generate_clock(self, gptp_time):
-        comp_val = gptp_time - self.latest_ts  # TODO When is the right time to genclk? SWITCHED TO TRIGGER
+        comp_val = gptp_time - self.latest_ts
         if int(comp_val % int(self.output_period / 2)) == 0:
             self.mclk_state = not self.mclk_state
             self.genclk.append([gptp_time, self.mclk_state * 0.95])  # multiply by 0.95 to distinguish on graph
@@ -211,7 +233,8 @@ class CLKDIV:
 
 
 if __name__ == "__main__":
-    run_time = int(0.1 * pow(10, 9))  # seconds to nS
+    # run_time = int(0.1 * pow(10, 9))  # seconds to nS
+    run_time = 12458200+1000
     genclk_offset = 5000
     sim = GPTPSOURCE(run_time, genclk_offset)
     sim.run()
@@ -221,10 +244,12 @@ if __name__ == "__main__":
         os.makedirs("dataout")
 
     fields = sim.all_fields.copy()
-    exclude = ["genclk_out"]
+    exclude = ["genclk_out", "count_to"]
     for f in exclude:
         fields.remove(f)
     sim.save_log_file(fields)
 
-    sim.draw_plot(0, 20833 * 200)
-    sim.draw_plot(20833 * 200, 20833*200)
+    sim.draw_waveforms(0, 20833*200)
+    sim.draw_waveforms(4125000, 20833 * 200)
+    sim.draw_waveforms(8291600, 20833 * 200)
+    sim.draw_phase(0, 8291600+20833*200)
