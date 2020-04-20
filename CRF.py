@@ -155,7 +155,8 @@ class CSGEN:
             if shift is not None:
                 tlog.append(["shifting", shift])
                 self.count_to = self.count_to + shift
-                self.srcclk_index = self.srcclk_index + 1
+                if rec_state != "outofbounds":
+                    self.srcclk_index = self.srcclk_index + 1
             self.recovery_state = rec_state
 
         # Add details to the log
@@ -220,10 +221,10 @@ if __name__ == "__main__":
         os.makedirs("dataout")
 
     fields = sim.all_fields.copy()
-    # exclude = ["genclk_out"]
-    # for f in exclude:
-    #     fields.remove(f)
+    exclude = ["genclk_out"]
+    for f in exclude:
+        fields.remove(f)
     sim.save_log_file(fields)
-    # sim.draw_plot(7500000, 20833*200)
+
     sim.draw_plot(0, 20833 * 200)
     sim.draw_plot(20833 * 200, 20833*200)

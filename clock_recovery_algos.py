@@ -127,10 +127,10 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     elif difference < 0:
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
-        correction = int(abs(difference / 213) / 40) * -1
+        correction = int(abs(difference / 213)) * -1
     elif difference >= 0:
         # local > RX, need to slow down by increasing count_to
-        correction = int(abs(difference / 213) / 40)
+        correction = int(abs(difference / 213))
         state = State.DIFF_GT
 
     if state != prev_state:
