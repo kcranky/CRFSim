@@ -14,6 +14,27 @@ import enum
 import math
 
 
+def get_verts(log, x_list):
+    l = []
+    for i in log:
+        if int(i) < x_list[0]:
+            pass
+        elif int(i) >= x_list[-1]:
+            break
+        else:
+            try:
+                if log[i]['count_to_high']:
+                    l.append([int(i), 'green'])
+            except KeyError:
+                pass
+            try:
+                if log[i]["correction"]:
+                    l.append([int(i), 'yellow'])
+            except KeyError:
+                pass
+    return l
+
+
 def append_log(log, gptp_time, items):
     try:
         log[gptp_time]
@@ -24,7 +45,7 @@ def append_log(log, gptp_time, items):
 
 
 def split_lists(lst, start, duration):
-
+    # TODO NEED TO ENSURE that it's a "TRUE" as a starting point
     index, arr = min(enumerate(lst), key=lambda x: abs(start - x[1][0]))
     end = index + int(duration / (20833 / 2))
     try:
@@ -126,7 +147,7 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     # Thresh B is about half the mclk cycle. We have 48khz = 20833 nS, or 10416.6667
     thresh = int(20833/2)  # We choose this, as the balance will be found on the "other end"
 
-    correction = int(math.ceil(difference/(160/4)))
+    correction = int(math.ceil(difference/(160/3)))
 
     if difference == 0:
         correction = 0
@@ -138,6 +159,7 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     elif (difference > 0) and (difference <= thresh):
         # local > RX, need to slow down by increasing count_to
         state = State.DIFF_GT
+
     else:
         correction = 0
         state = "outofbounds"

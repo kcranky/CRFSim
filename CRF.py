@@ -82,12 +82,15 @@ class GPTPSOURCE:
     def draw_waveforms(self, start, duration):
         print("Drawing Waveforms")
         figname = "dataout/{}_Waveform-{}-{}.png".format(self.simtime, start, (start + duration))
-        # plot source clock
         x_src, y_src = cra.split_lists(data.sourceclock, start, duration)
-        plot.plot(x_src, y_src, color='blue', drawstyle='steps-post', linewidth=0.25)
-
-        # get the gen clock
         x_gen, y_gen = cra.split_lists(self.genclk, start, duration)
+
+        # Add vertical lines for where correction algorithm is implemented
+        verts = cra.get_verts(self.log, x_src)
+        for i in verts:
+            plot.axvline(i[0], color=i[1])
+
+        plot.plot(x_src, y_src, color='blue', drawstyle='steps-post', linewidth=0.25)
         plot.plot(x_gen, y_gen, color='red', drawstyle='steps-post', linewidth=0.25)
 
         # TODO: Handle case for when plot goes oob of generated clock
@@ -112,13 +115,17 @@ class GPTPSOURCE:
         # Draw the phase diff plot
         x_src, y_src = cra.split_lists(data.sourceclock, start, duration)
         x_gen, y_gen = cra.split_lists(self.genclk, start, duration)
+
+        # Add vertical lines for where correction algorithm is implemented
+        verts = cra.get_verts(self.log, x_src)
+        for i in verts:
+            plot.axvline(i[0], color=i[1], linewidth=0.25)
+
         phase_diff = [((x1 - x2) % 20833) for (x1, x2) in zip(x_src, x_gen)]
-        print(len(x_src), len(x_gen), len(phase_diff))
-        # print(phase_diff)
 
-        plot.plot(x_src[0:len(phase_diff)], phase_diff, linewidth=0.25)
+        plot.plot(x_src[0:len(phase_diff)], phase_diff, linewidth=0.5)
 
-        plot.xticks(x_src[::6], x_src[::6], rotation='vertical')
+        plot.xticks(x_src[::1600], x_src[::1600], rotation='vertical')
         # Save
         plot.savefig("dataout/{}_PhaseDiff.png".format(self.simtime), dpi=2400)
         plot.close()
@@ -159,7 +166,7 @@ class CSGEN:
             if self.state == 1:
                 to_log = [["count_to_high", self.count_to]]
                 self.clock_div_module.trigger_cs2000(gptp_time)
-                self.count_to = 12500
+                # self.count_to = 12500
             else:
                 to_log = [["count_to_low", self.count_to]]
             append_log(self.log, gptp_time, to_log)
@@ -174,15 +181,16 @@ class CSGEN:
 
         # make an adjustment to count_to
         if self.recovery_state != rec_state:  # we've changed state and hence need to update!
-            tlog.append(["correction", True])
             if shift is not None:
                 tlog.append(["shifting", shift])
-                self.count_to = self.count_to + shift
+                # self.count_to = self.count_to + shift
 
-                # self.count_to = 12500 + shift
+
                 # TODO : If we are setting to this value, we need to check for the condition that a correction
                 #   might change count_to to a value lower than current_count
                 if rec_state != "outofbounds":
+                    self.count_to = 12500 + shift
+                    tlog.append(["correction", True])
                     self.srcclk_index = self.srcclk_index + 1
             self.recovery_state = rec_state
 
@@ -237,8 +245,8 @@ class CLKDIV:
 
 
 if __name__ == "__main__":
-    # run_time = int(0.1 * pow(10, 9))  # seconds to nS
-    run_time = 8291600+(20833*202)  # seconds to nS
+    # run_time = int(0.9 * pow(10, 9))  # seconds to nS
+    run_time = int(16666667 + 4*(20833 * 200) + 20833 * 200)
     genclk_offset = 5000
     sim = GPTPSOURCE(run_time, genclk_offset)
     sim.run()
@@ -248,12 +256,16 @@ if __name__ == "__main__":
         os.makedirs("dataout")
 
     fields = sim.all_fields.copy()
-    exclude = ["genclk_out", "count_to_low"]
+    exclude = ["genclk_out"]
     for f in exclude:
         fields.remove(f)
     sim.save_log_file(fields)
 
     sim.draw_waveforms(0, 20833*200)
     sim.draw_waveforms(4125000, 20833 * 200)
-    # sim.draw_waveforms(8291600, 20833 * 200)
-    sim.draw_phase(0, 8291600+20833*200)
+    sim.draw_waveforms(8291600, 20833 * 200)
+    # sim.draw_waveforms(16666667, 20833 * 200)
+    # sim.draw_waveforms(16666667+20833 * 200, 20833 * 200)
+    # sim.draw_waveforms(16666667 + 2*(20833 * 200), 20833 * 200)
+    # sim.draw_waveforms(16666667 + 4*(20833 * 200), 20833 * 200)
+    sim.draw_phase(0, run_time-1)
