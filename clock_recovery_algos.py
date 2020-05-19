@@ -65,7 +65,6 @@ class State(enum.Enum):
     DIFF_ERROR = 5
 
 
-# TODO Update to new logging method here
 def rev1(local_timestamp, rx_timestamp, prev_state):
     """
     The first attempt.
@@ -93,7 +92,7 @@ def rev1(local_timestamp, rx_timestamp, prev_state):
         state = State.DIFF_GT
         if prev_state != state:
             # TODO: slow down local clock by increasing count_to proportionally to the difference ?
-            correction = int(abs(difference / 213) / 40)
+            correction = int((difference/8520)-difference/20833)
 
     elif difference > threshold_b:
         state = State.DIFF_MGT
@@ -104,13 +103,50 @@ def rev1(local_timestamp, rx_timestamp, prev_state):
             # do a correction to speed up local clock by making count_to smaller
             # 3.33 * 160 = ~213
             # We then further device by 40 to cater to convert nS to count
-            correction = int(abs(difference/213)/40)*-1
+            correction = int((difference/8520)-difference/20833)*-1
 
     elif difference < -threshold_b:
         state = State.DIFF_MLT
 
     else:
         state = State.DIFF_ERROR
+
+    if prev_state != state:
+        to_log = [["src_ts", rx_timestamp], ["gen_ts", local_timestamp], ["delta", difference], ["result", correction],
+                  ["state", state]]
+
+    return correction, state, to_log
+
+
+def rev1b(local_timestamp, rx_timestamp, prev_state):
+    """
+    Going to directly copy the algorithm from the current VHDL algorithm
+    :return:
+    """
+    threshold_a = 1041  # 5% of the period in nS
+    threshold_b = 1666666  # period of Mclk in nS * 80, rounded down
+    if rx_timestamp >= local_timestamp:
+        difference = rx_timestamp - local_timestamp
+        waves_state = 000
+    else:
+        difference = local_timestamp - rx_timestamp
+        waves_state = 100
+    correction = int((difference/8520)-difference/20833)
+    state = None
+    to_log = []
+
+    if difference <= threshold_a:
+        # match!
+        state = State.DIFF_MATCH
+        state = 000
+    elif difference <= threshold_b:
+        # between A and B
+        state = waves_state + 1
+    elif difference > threshold_b:
+        # greater than B
+        state = waves_state + 10
+    else:
+        state = 111
 
     if prev_state != state:
         to_log = [["src_ts", rx_timestamp], ["gen_ts", local_timestamp], ["delta", difference], ["result", correction],
@@ -147,7 +183,7 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     # Thresh B is about half the mclk cycle. We have 48khz = 20833 nS, or 10416.6667
     thresh = int(20833/2)  # We choose this, as the balance will be found on the "other end"
 
-    correction = int(math.ceil(difference/(160/3)))
+    correction = int(math.ceil((difference/160)/3.33))-1
 
     if difference == 0:
         correction = 0
@@ -171,6 +207,53 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     return correction, state, to_log
 
 
-def rev3(gptp_time, local_timestamp, rx_timestamp, logfile, prev_state):
-    return
+def rev3(local_timestamp, rx_timestamp, prev_state, gptptime):
+    """
+    Here we only care about a sample if it's within a "measurement window", which is smaller than 0.5T in either direction
+    We assume that samples outside of this window are of no concern to us, and we ignore them
+
+    The difference is calculated over the amount of time between sampled timestamps.
+    As we only have timestamps with 160 interval to deal with
+    - A correction to count_to affects the outclock by 3.33nS
+    - We need to distribute corrections over 160 cycles (the time between RX timestamps) ???
+    - The max difference worth making is 3.33*80, as anything greater than, is greater than the comparison window
+    - The correction should thus be diff/(3.33*160)
+    - The comparison algorithm runs at 25MHz, or 40nS
+    - 160*20833/40 = 83332
+
+    :param gptp_time:
+    :param local_timestamp:
+    :param rx_timestamp:
+    :param log:
+    :param prev_state:
+    :return:
+    """
+    to_log = []
+    state = None
+
+    threshA = 1041  # 5% of 20833. Ignored in this cause we're just gonna try correct anyway
+    # Thresh B is about half the 95% mclk cycle. We have 48khz = 20833.33 nS
+    thresh = int(20833.33*0.99)  # We choose this, as the balance will be found on the "other end"
+
+    difference = rx_timestamp - local_timestamp
+    nextts = rx_timestamp + 3333333
+    t = (nextts-gptptime)/(1/48E3*1E9)
+    correction = int(difference/(t)/3.33)
+
+    if 0 <= abs(difference) <= thresh:
+        # local > RX, need to slow down by increasing count_to
+        print(nextts)
+        state = State.DIFF_GT
+    elif rx_timestamp < local_timestamp:
+        print(nextts)
+        state = "get_next RX"
+    else:
+        correction = 0
+        state = "outofbounds"
+
+    if state != prev_state:
+        to_log = [["src_ts", rx_timestamp], ["gen_ts", local_timestamp], ["delta", difference], ["result", correction],
+                  ["state", state]]
+
+    return correction, state, to_log
 # etc
