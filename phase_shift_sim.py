@@ -4,20 +4,23 @@ from changes to the ocw in to the CS2000 module
 
 Inputs: Count to
 """
+import data
 
 
-from CRFv2_OOP import CSGen, CLKDIV
-from queue import Queue
+def loopdeloop():
+    inc = 3333333.33
+    gen = 5000
+    print("{},\t\t\t{},\t\t\t{},\t\t\t{}".format("NS", "SRC", "gen", "diff"))
+    correction = 0
 
-csgen = CSGen()
+    for i in data.timestamps:
+        diff = i-gen
+        # don't check for threshold! We have no interim timestamps to validate here!
+        correction = int(diff/160/3.33)
+        nextgen = int(gen + inc + correction*3.33*160)
+        gen = nextgen
+        print(i, gen, diff, correction, nextgen)
 
-localfifo = Queue()
 
-if __name__ == '__main__':
-    for i in range(160*28333):
-        csgen.ocw_control(i, localfifo)
-
-        if i % 208330 == 0 and i > 0:
-            print("{} - shifting -10".format(i))
-            csgen.adjust_count_to(float(-10))
-
+if __name__ == "__main__":
+    loopdeloop()
