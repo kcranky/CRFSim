@@ -183,19 +183,18 @@ def rev2(local_timestamp, rx_timestamp, prev_state):
     # Thresh B is about half the mclk cycle. We have 48khz = 20833 nS, or 10416.6667
     thresh = int(20833/2)  # We choose this, as the balance will be found on the "other end"
 
-    correction = int(math.ceil((difference/160)/3.33))-1
-
     if difference == 0:
         correction = 0
         state = State.DIFF_MATCH
     elif (difference < 0) and (difference >= -thresh):
         # RX > local, speed up by decreasing count_to
         state = State.DIFF_LT
-        correction = correction * -1
+        correction = int(difference / 160 / 3.33)
+        print(correction)
     elif (difference > 0) and (difference <= thresh):
         # local > RX, need to slow down by increasing count_to
         state = State.DIFF_GT
-
+        correction = int(difference / 160 / 3.33)
     else:
         correction = 0
         state = "outofbounds"

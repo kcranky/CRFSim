@@ -177,21 +177,20 @@ class CSGEN:
         genclk_ts = self.clock_div_module.latest_ts
 
         # call the correction algorithm
-        shift, rec_state, tlog = cra.rev1b(genclk_ts, srcclk_ts, self.recovery_state)
+        shift, rec_state, tlog = cra.rev2(genclk_ts, srcclk_ts, self.recovery_state)
 
         # make an adjustment to count_to
         if self.recovery_state != rec_state:  # we've changed state and hence need to update!
             if shift is not None:
                 tlog.append(["shifting", shift])
+                # self.count_to = self.count_to + shift
 
                 # TODO : If we are setting to this value, we need to check for the condition that a correction
                 #   might change count_to to a value lower than current_count
-                if rec_state != 111:
-                    if rec_state > 100:
-                        self.count_to = 12500 + shift
-                    else:
-                        self.count_to = 12500 - shift
+                if rec_state != "outofbounds":
+                    self.count_to = 12500 + shift
                     tlog.append(["correction", True])
+                    self.srcclk_index = self.srcclk_index + 1
             self.recovery_state = rec_state
 
         # Add details to the log
@@ -246,7 +245,7 @@ class CLKDIV:
 
 if __name__ == "__main__":
     # run_time = int(0.9 * pow(10, 9))  # seconds to nS
-    run_time = int(16666667 + 4*(20833 * 200) + 20833 * 200)
+    run_time = int((20833 * 12000)) #  24,958,000
     genclk_offset = -5000
     sim = GPTPSOURCE(run_time, genclk_offset)
     sim.run()
@@ -256,7 +255,7 @@ if __name__ == "__main__":
         os.makedirs("dataout")
 
     fields = sim.all_fields.copy()
-    exclude = ["genclk_out", "count_to_high", "count_to_low", "last_trigger", "cs2000difference", "F out"]
+    exclude = ["genclk_out", "count_to_high", "count_to_low"]  # , "last_trigger", "cs2000difference", "F out"]
     for f in exclude:
         fields.remove(f)
     sim.save_log_file(fields)
@@ -264,4 +263,9 @@ if __name__ == "__main__":
     sim.draw_waveforms(0, 20833*200)
     sim.draw_waveforms(4125000, 20833 * 200)
     sim.draw_waveforms(8291600, 20833 * 200)
+    sim.draw_waveforms(12458200, 20833 * 200)
+    sim.draw_waveforms(12458200+(20833 * 200), 20833 * 200)
+    sim.draw_waveforms(12458200 + 2*(20833 * 200), 20833 * 200)
+    sim.draw_waveforms(12458200 + 3 * (20833 * 200), 20833 * 200)
+    # sim.draw_waveforms(20833 * 1000, 20833 * 200)
     sim.draw_phase(0, run_time-1)
